@@ -51,10 +51,12 @@ export default function RootLayout({
             FIX: default harus `dark` — sebelumnya html tanpa class saat
             pertama kali / tema gelap, sehingga token shadcn (:root) jatuh ke
             nilai LIGHT → judul kartu near-black di atas kartu gelap, body
-            putih, tooltip/popover putih. */}
+            putih, tooltip/popover putih.
+            Ronde 9: class bersifat EKSKLUSIF (dark ATAU light) — bersihkan
+            class lawan agar tak pernah "dark light" sekaligus. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{if(localStorage.getItem('ayam-theme')==='light'){document.documentElement.classList.add('light')}else{document.documentElement.classList.add('dark')}}catch(e){document.documentElement.classList.add('dark')}`,
+            __html: `try{var l=localStorage.getItem('ayam-theme')==='light';var c=document.documentElement.classList;if(l){c.add('light');c.remove('dark')}else{c.add('dark');c.remove('light')}}catch(e){document.documentElement.classList.add('dark')}`,
           }}
         />
       </head>

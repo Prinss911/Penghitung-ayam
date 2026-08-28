@@ -26,6 +26,9 @@ interface VideoFeedProps {
   retryLabel?: string;
   /** Naikkan nilai ini untuk menyambungkan ulang stream otomatis (mis. saat backend pulih) */
   autoRetryKey?: number;
+  /** Label overlay "menyiapkan video" saat sumber diganti (ronde 9);
+   *  kosong/undefined = overlay dinonaktifkan */
+  switchingLabel?: string;
 }
 
 export function VideoFeed({
@@ -35,10 +38,36 @@ export function VideoFeed({
   errorDesc,
   retryLabel = "Retry",
   autoRetryKey = 0,
+  switchingLabel,
 }: VideoFeedProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [status, setStatus] = useState<"connecting" | "live" | "error">("connecting");
   const [nonce, setNonce] = useState(0); // untuk retry (re-mount effect)
+  // ===== Overlay "menyiapkan video" saat sumber kamera diganti (ronde 9) =====
+  const [switching, setSwitching] = useState(false);
+
+  // Dengarkan event global ayam:switching-source (dikirim api.setCameraSource)
+  useEffect(() => {
+    if (!switchingLabel) return;
+    const onSwitch = () => setSwitching(true);
+    try {
+      window.addEventListener("ayam:switching-source", onSwitch);
+      return () =>
+        window.removeEventListener("ayam:switching-source", onSwitch);
+    } catch {
+      /* abaikan */
+    }
+  }, [switchingLabel]);
+
+  // Overlay hilang saat frame pertama masuk lagi (status live) + failsafe 20 dtk
+  useEffect(() => {
+    if (status === "live") setSwitching(false);
+  }, [status]);
+  useEffect(() => {
+    if (!switching) return;
+    const to = setTimeout(() => setSwitching(false), 20_000);
+    return () => clearTimeout(to);
+  }, [switching]);
 
   // Sambungkan ulang otomatis ketika autoRetryKey berubah (backend pulih)
   const firstKey = useRef(true);
@@ -136,6 +165,14 @@ export function VideoFeed({
   return (
     <div className="relative h-full w-full bg-black">
       <canvas ref={canvasRef} className="h-full w-full object-contain" />
+
+      {/* Overlay pergantian sumber (ronde 9): di atas frame lama, di bawah status */}
+      {switching && status === "live" ? (
+        <div className="absolute inset-0 z-[5] flex flex-col items-center justify-center gap-3 bg-zinc-950/70 backdrop-blur-[2px]">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-700 border-t-amber-400" />
+          <p className="text-xs font-medium text-amber-300">{switchingLabel}</p>
+        </div>
+      ) : null}
 
       {status === "connecting" ? (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-zinc-950">

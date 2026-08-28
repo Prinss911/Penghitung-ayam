@@ -37,6 +37,20 @@ export interface Stats {
   last_session?: LastSession | null;
 }
 
+/** Satu hari pada riwayat capaian target (fitur ronde 9) */
+export interface TargetHistoryDay {
+  /** YYYY-MM-DD */
+  date: string;
+  /** Total ayam terhitung hari itu (akumulasi sesi selesai) */
+  total: number;
+  /** Snapshot target harian saat itu (0 = tanpa target) */
+  target: number;
+  /** Jumlah sesi yang selesai hari itu */
+  sessions: number;
+  /** true bila target > 0 dan total >= target */
+  achieved: boolean;
+}
+
 /** Ringkasan sesi terakhir yang baru dihentikan (fitur ronde 7) */
 export interface LastSession {
   asal_ayam: string;
@@ -319,6 +333,31 @@ export const ayamApi = {
   /** Target harian (ronde 8) */
   getTarget: () => jsonFetch<{ target: number }>(bp("/api/target")),
 
+  /** Riwayat capaian target harian N hari terakhir (ronde 9, tanpa PIN).
+   *  Urutan lama → baru, selalu berakhir hari ini; hari kosong diisi 0. */
+  getTargetHistory: (days = 7) =>
+    jsonFetch<{ days: TargetHistoryDay[] }>(
+      bp(`/api/target/history?days=${Math.min(31, Math.max(1, Math.floor(days)))}`)
+    ),
+
+  /** Tes koneksi sumber kamera tanpa mengganggu capture aktif (ronde 9).
+   *  Selalu HTTP 200; cek field `ok` + `error` untuk hasilnya. */
+  testCameraSource: (source: string) =>
+    jsonFetch<{
+      ok: boolean;
+      frames: number;
+      width: number;
+      height: number;
+      fps: number;
+      source_type: "rtsp" | "file" | "webcam" | "invalid";
+      error: string | null;
+      elapsed_ms: number;
+    }>(bp("/api/camera/test"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source }),
+    }),
+
   /** Simpan target harian (PIN required) — 0 berarti tanpa target */
   setTarget: (target: number) =>
     jsonFetch<{ status: string; target: number }>(bp("/api/target"), {
@@ -411,13 +450,20 @@ export const ayamApi = {
   /** Info sumber kamera aktif + daftar video demo */
   getCameraSource: () => jsonFetch<CameraSourceInfo>(bp("/api/camera-source")),
 
-  /** Ganti sumber kamera saat runtime (RTSP / file video / webcam) */
-  setCameraSource: (source: string) =>
-    jsonFetch<{ status: string; source: string }>(bp("/api/camera-source"), {
+  /** Ganti sumber kamera saat runtime (RTSP / file video / webcam).
+   *  Otomatis menandai UI "menyiapkan video" via event global (ronde 9). */
+  setCameraSource: async (source: string) => {
+    try {
+      window.dispatchEvent(new CustomEvent("ayam:switching-source"));
+    } catch {
+      /* abaikan */
+    }
+    return jsonFetch<{ status: string; source: string }>(bp("/api/camera-source"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ source }),
-    }),
+    });
+  },
 
   /** Hapus video hasil unggahan (hanya upload_*) — 400 bila sedang aktif */
   deleteCameraVideo: (name: string) =>

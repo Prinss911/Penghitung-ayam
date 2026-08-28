@@ -15,6 +15,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip as ReTooltip,
   XAxis,
@@ -50,6 +51,7 @@ import {
   Target,
   Timer,
   Trash2,
+  Trophy,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -101,6 +103,7 @@ import {
   PinRequiredError,
   type HistoryItem,
   type LastSession,
+  type TargetHistoryDay,
 } from "@/lib/ayam/api";
 import { dict, type Lang } from "@/lib/ayam/i18n";
 
@@ -194,6 +197,84 @@ function fmtDur(secs: number): string {
   if (h > 0) return `${h}h ${m}m`;
   if (m > 0) return `${m}m ${ss.toString().padStart(2, "0")}s`;
   return `${ss}s`;
+}
+
+/** Satu hari pada grafik mingguan (ronde 9) */
+interface WeeklyDatum {
+  day: string;
+  total: number;
+  target: number;
+  sessions: number;
+  achieved: boolean;
+  isToday: boolean;
+}
+
+/** Tooltip kustom grafik capaian mingguan (ronde 9) */
+function WeeklyTooltipContent({
+  active,
+  payload,
+  t,
+  lang,
+}: {
+  active?: boolean;
+  payload?: Array<{ payload: WeeklyDatum }>;
+  t: (typeof dict)[Lang];
+  lang: Lang;
+}) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  const locale = lang === "id" ? "id-ID" : "en-US";
+  const pct =
+    d.target > 0 ? Math.min(999, Math.round((d.total / d.target) * 100)) : null;
+  return (
+    <div className="rounded-lg border border-zinc-700 bg-popover px-3 py-2 text-xs shadow-xl">
+      <p className="mb-1 font-semibold text-foreground">
+        {d.isToday ? (lang === "id" ? "Hari ini" : "Today") : d.day.replace("-", "/")}
+        {d.sessions > 0 ? (
+          <span className="ml-1.5 font-normal text-muted-foreground">
+            · {d.sessions} {t.tooltipSesi}
+          </span>
+        ) : null}
+      </p>
+      <p className="flex items-center gap-1.5 font-mono text-[11px]">
+        <span
+          className={`inline-block h-2 w-2 rounded-sm ${
+            d.isToday
+              ? "bg-gradient-to-b from-emerald-400 to-emerald-600"
+              : d.achieved
+                ? "bg-gradient-to-b from-emerald-400 to-emerald-600"
+                : "bg-gradient-to-b from-amber-400 to-amber-600"
+          }`}
+        />
+        <span className="font-semibold">{d.total.toLocaleString(locale)}</span>
+        <span className="text-muted-foreground">{t.totalAyam.toLowerCase()}</span>
+        {d.target > 0 ? (
+          <span className={d.achieved ? "text-emerald-500" : "text-muted-foreground"}>
+            / {d.target.toLocaleString(locale)} · {pct}%
+          </span>
+        ) : null}
+      </p>
+      {d.target > 0 ? (
+        <p
+          className={`mt-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+            d.achieved
+              ? "bg-emerald-500/15 text-emerald-500"
+              : "bg-zinc-500/15 text-muted-foreground"
+          }`}
+        >
+          {d.achieved ? (
+            <>
+              <Trophy className="h-2.5 w-2.5" /> {t.tooltipTercapai}
+            </>
+          ) : (
+            <>
+              <Target className="h-2.5 w-2.5" /> {t.tooltipBelum}
+            </>
+          )}
+        </p>
+      ) : null}
+    </div>
+  );
 }
 
 function ConnBadge({ mode, t }: { mode: string; t: (typeof dict)[Lang] }) {
@@ -295,6 +376,22 @@ export default function AyamCounterPage() {
   const [targetInput, setTargetInput] = useState("");
   const [targetBusy, setTargetBusy] = useState(false);
   const targetCelebratedRef = useRef("");
+
+  // ----- riwayat capaian target 7 hari (ronde 9) -----
+  const [targetHistory, setTargetHistory] = useState<TargetHistoryDay[]>([]);
+  const refreshTargetHistory = useCallback(async () => {
+    try {
+      const res = await ayamApi.getTargetHistory(7);
+      setTargetHistory(res.days ?? []);
+    } catch {
+      /* biarkan data lama — grafik tetap tampil dari riwayat sesi */
+    }
+  }, []);
+  useEffect(() => {
+    void refreshTargetHistory();
+    const iv = setInterval(() => void refreshTargetHistory(), 30_000);
+    return () => clearInterval(iv);
+  }, [refreshTargetHistory]);
 
   // ----- PIN gate (aksi terproteksi) -----
   const [pinGateOpen, setPinGateOpen] = useState(false);
@@ -670,13 +767,14 @@ export default function AyamCounterPage() {
       });
       setTargetOpen(false);
       refreshStats();
+      void refreshTargetHistory(); // garis target grafik ikut terbaru (ronde 9)
     } catch (e) {
       if (e instanceof PinRequiredError) return; // gate global sudah terbuka via event
       toast.error(t.targetGagal);
     } finally {
       setTargetBusy(false);
     }
-  }, [targetInput, t, lang, refreshStats]);
+  }, [targetInput, t, lang, refreshStats, refreshTargetHistory]);
 
   // ----- derived -----
   const daily = history.stats;
@@ -687,7 +785,7 @@ export default function AyamCounterPage() {
   const targetPct =
     target > 0 ? Math.min(100, Math.round((todayCount / target) * 100)) : 0;
 
-  // Toast sekali per (hari, target) bila target tercapai
+  // Toast + notifikasi browser sekali per (hari, target) bila target tercapai
   useEffect(() => {
     if (target <= 0 || todayCount < target) return;
     const key = `${new Date().toDateString()}-${target}`;
@@ -697,26 +795,81 @@ export default function AyamCounterPage() {
       description: `${todayCount.toLocaleString()} / ${target.toLocaleString()} — ${targetPct}%`,
     });
     playBeep();
-  }, [todayCount, target, targetPct, t, playBeep]);
-
-  const weeklyData = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const h of history.history) {
-      if (!h.tanggal) continue;
-      map.set(h.tanggal, (map.get(h.tanggal) ?? 0) + (h.total_count ?? 0));
+    // Ronde 9: notifikasi browser saat target tercapai (berguna saat tab di latar)
+    try {
+      if (notifEnabled && "Notification" in window && Notification.permission === "granted") {
+        const n = new Notification(`${t.targetTercapai} — ${target.toLocaleString()}`, {
+          body: `${todayCount.toLocaleString()} / ${target.toLocaleString()} (${targetPct}%)`,
+          tag: "ayam-target",
+        });
+        n.onclick = () => {
+          try {
+            window.focus();
+            n.close();
+          } catch {
+            /* abaikan */
+          }
+        };
+      }
+    } catch {
+      /* abaikan */
     }
-    // Zero-fill: selalu tampilkan 7 hari terakhir (hari tanpa data = 0)
+  }, [todayCount, target, targetPct, t, playBeep, notifEnabled]);
+
+  /** Satu hari pada grafik mingguan (ronde 9) */
+  const weeklyData = useMemo(() => {
     const pad = (n: number) => String(n).padStart(2, "0");
     const now = new Date();
-    const days: { day: string; total: number }[] = [];
+    const histMap = new Map(targetHistory.map((d) => [d.date, d]));
+    // Fallback: bila endpoint riwayat belum tersedia, agregasi dari sesi tersimpan
+    const useBackend = targetHistory.length > 0;
+    const sessionMap = new Map<string, number>();
+    if (!useBackend) {
+      for (const h of history.history) {
+        if (!h.tanggal) continue;
+        sessionMap.set(h.tanggal, (sessionMap.get(h.tanggal) ?? 0) + (h.total_count ?? 0));
+      }
+    }
+    const days: {
+      day: string;
+      total: number;
+      target: number;
+      sessions: number;
+      achieved: boolean;
+      isToday: boolean;
+    }[] = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date(now);
       d.setDate(now.getDate() - i);
-      const key = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-      days.push({ day: key.slice(5), total: map.get(key) ?? 0 });
+      const k = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      const h = histMap.get(k);
+      const isToday = i === 0;
+      const baseTotal = useBackend ? (h?.total ?? 0) : (sessionMap.get(k) ?? 0);
+      const dayTarget = useBackend ? (h?.target ?? 0) : target;
+      // Hari ini pakai angka live (termasuk hitungan sesi yang sedang berjalan)
+      const total = isToday ? Math.max(baseTotal, todayCount) : baseTotal;
+      days.push({
+        day: k.slice(5),
+        total,
+        target: dayTarget,
+        sessions: h?.sessions ?? 0,
+        achieved: dayTarget > 0 && total >= dayTarget,
+        isToday,
+      });
     }
     return days;
-  }, [history]);
+  }, [targetHistory, history, todayCount, target]);
+
+  // Ringkasan capaian mingguan (chips di bawah grafik, ronde 9)
+  const weeklySummary = useMemo(() => {
+    const achievedDays = weeklyData.filter((d) => d.achieved).length;
+    const totalWeek = weeklyData.reduce((s, d) => s + d.total, 0);
+    const chartMax = Math.max(
+      10,
+      ...weeklyData.map((d) => Math.max(d.total, d.target))
+    );
+    return { achievedDays, totalWeek, chartMax: Math.ceil(chartMax * 1.12) };
+  }, [weeklyData]);
 
   const filteredHistory = useMemo(() => {
     const q = historySearch.trim().toLowerCase();
@@ -761,10 +914,12 @@ export default function AyamCounterPage() {
           aria-hidden
           className="pointer-events-none absolute inset-x-0 -bottom-px h-px bg-gradient-to-r from-transparent via-amber-500/50 to-transparent"
         />
-        <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-zinc-950 shadow-lg shadow-amber-500/20">
-              <Bird className="h-6 w-6" />
+        {/* Ronde 9: flex-wrap — di layar sempit (≤sm) baris tombol turun ke
+            bawah brand, tidak lagi menimpa logo/judul */}
+        <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3 sm:px-6">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-zinc-950 shadow-lg shadow-amber-500/20 sm:h-10 sm:w-10">
+              <Bird className="h-5 w-5 sm:h-6 sm:w-6" />
             </div>
             <div className="min-w-0">
               <h1 className="truncate text-base font-bold leading-tight sm:text-lg">
@@ -776,7 +931,7 @@ export default function AyamCounterPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-3">
             <ConnBadge mode={connMode} t={t} />
             <SettingsDialog t={t} onSaved={refreshDevice} />
             <PinManagerDialog t={t} />
@@ -980,6 +1135,7 @@ export default function AyamCounterPage() {
                     errorDesc={t.kameraGagalDesc}
                     retryLabel={lang === "id" ? "Coba lagi" : "Retry"}
                     autoRetryKey={recoveryTick}
+                    switchingLabel={t.menyiapkanVideo}
                   />
                 </div>
 
@@ -1376,6 +1532,11 @@ export default function AyamCounterPage() {
                         <stop offset="0%" stopColor="#fbbf24" stopOpacity={0.9} />
                         <stop offset="100%" stopColor="#d97706" stopOpacity={0.3} />
                       </linearGradient>
+                      {/* Ronde 9: gradasi khusus hari lampau yang capai target */}
+                      <linearGradient id="barFillAchieved" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#6ee7b7" stopOpacity={0.95} />
+                        <stop offset="100%" stopColor="#10b981" stopOpacity={0.45} />
+                      </linearGradient>
                     </defs>
                     <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 3" vertical={false} />
                     <XAxis
@@ -1389,17 +1550,28 @@ export default function AyamCounterPage() {
                       tickLine={false}
                       axisLine={false}
                       allowDecimals={false}
+                      /* domain eksplisit agar garis target tak terpotong (ronde 9) */
+                      domain={[0, weeklySummary.chartMax]}
                     />
+                    {/* Garis target harian (ronde 9) — tampil bila target > 0 */}
+                    {target > 0 ? (
+                      <ReferenceLine
+                        y={target}
+                        stroke="#f59e0b"
+                        strokeDasharray="5 4"
+                        strokeWidth={1.5}
+                        label={{
+                          value: `${t.targetHarian}: ${target.toLocaleString()}`,
+                          position: "insideTopLeft",
+                          fill: "#f59e0b",
+                          fontSize: 10,
+                          fontWeight: 600,
+                        }}
+                      />
+                    ) : null}
                     <ReTooltip
-                      cursor={{ fill: "#18181b", opacity: 0.6 }}
-                      contentStyle={{
-                        background: "#09090b",
-                        border: "1px solid #3f3f46",
-                        borderRadius: 8,
-                        fontSize: 12,
-                        color: "#f4f4f5",
-                      }}
-                      formatter={(value: number | string) => [value, t.totalAyam]}
+                      cursor={{ fill: "var(--chart-cursor)", opacity: 0.6 }}
+                      content={<WeeklyTooltipContent t={t} lang={lang} />}
                     />
                     <Bar
                       dataKey="total"
@@ -1411,9 +1583,11 @@ export default function AyamCounterPage() {
                         <Cell
                           key={idx}
                           fill={
-                            idx === weeklyData.length - 1
+                            entry.isToday
                               ? "url(#barFillToday)"
-                              : "url(#barFillPast)"
+                              : entry.achieved
+                                ? "url(#barFillAchieved)"
+                                : "url(#barFillPast)"
                           }
                         />
                       ))}
@@ -1421,16 +1595,44 @@ export default function AyamCounterPage() {
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-              <p className="mt-1.5 flex items-center justify-end gap-3 text-[10px] text-zinc-500">
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-sm bg-gradient-to-b from-amber-400 to-amber-600" />
-                  {lang === "id" ? "Sebelumnya" : "Previous"}
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-sm bg-gradient-to-b from-emerald-400 to-emerald-600" />
-                  {lang === "id" ? "Hari ini" : "Today"}
-                </span>
-              </p>
+              {/* Legenda + ringkasan capaian mingguan (ronde 9) */}
+              <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[10px] text-zinc-500">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold ${
+                      weeklySummary.achievedDays > 0
+                        ? "border-emerald-900 bg-emerald-950 text-emerald-400"
+                        : "border-zinc-800 bg-zinc-900 text-zinc-500"
+                    }`}
+                    title={t.capaiTarget}
+                  >
+                    <Trophy className="h-2.5 w-2.5" />
+                    {weeklySummary.achievedDays}/7 {t.capaiTarget}
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="font-mono text-[10px] font-semibold text-zinc-400">
+                      {weeklySummary.totalWeek.toLocaleString(lang === "id" ? "id-ID" : "en-US")}
+                    </span>
+                    {t.total7Hari}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-sm bg-gradient-to-b from-amber-400 to-amber-600" />
+                    {lang === "id" ? "Sebelumnya" : "Previous"}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-sm bg-gradient-to-b from-emerald-400 to-emerald-600" />
+                    {lang === "id" ? "Hari ini" : "Today"}
+                  </span>
+                  {target > 0 ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="h-px w-3 border-t-2 border-dashed border-amber-500" />
+                      {t.targetHarian}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
             </CardContent>
           </Card>
         </motion.section>

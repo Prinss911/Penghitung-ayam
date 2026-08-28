@@ -89,11 +89,11 @@ export function SessionTrendChart({ points, total, active, t }: SessionTrendChar
                 <Tooltip
                   cursor={{ stroke: "#f59e0b", strokeOpacity: 0.3 }}
                   contentStyle={{
-                    background: "#09090b",
-                    border: "1px solid #3f3f46",
+                    background: "var(--tooltip-bg)",
+                    border: "1px solid var(--tooltip-border)",
                     borderRadius: 8,
                     fontSize: 12,
-                    color: "#f4f4f5",
+                    color: "var(--tooltip-text)",
                   }}
                   labelFormatter={(v) => `${v} ${t.detik}`}
                   formatter={(value: number | string) => [value, t.totalAyam]}

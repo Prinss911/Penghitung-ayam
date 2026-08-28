@@ -31,6 +31,8 @@ const FLASK_PROXY_ROUTES: Array<[string, string]> = [
   ["/api/audit", "/api/audit"],
   ["/api/audit/:path*", "/api/audit/:path*"],
   ["/api/target", "/api/target"],
+  ["/api/target/history", "/api/target/history"],
+  ["/api/camera/test", "/api/camera/test"],
   ["/api/camera-presets", "/api/camera-presets"],
   ["/api/pin", "/api/pin"],
   ["/api/pin/:path*", "/api/pin/:path*"],

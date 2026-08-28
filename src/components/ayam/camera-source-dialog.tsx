@@ -13,7 +13,10 @@ import {
   Check,
   CloudUpload,
   Loader2,
+  PlugZap,
   RadioTower,
+  ShieldCheck,
+  ShieldX,
   Trash2,
   Video,
   Webcam,
@@ -88,6 +91,11 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
   const [presetName, setPresetName] = useState("");
   const [presetBusy, setPresetBusy] = useState(false);
   const [deletePresetName, setDeletePresetName] = useState<string | null>(null);
+  // ===== Tes koneksi sumber (ronde 9) =====
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<
+    Awaited<ReturnType<typeof ayamApi.testCameraSource>> | null
+  >(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -142,6 +150,31 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
   );
 
   const current = info?.source ?? "";
+
+  // ===== Tes koneksi sumber tanpa mengganggu capture aktif (ronde 9) =====
+  const runTest = useCallback(
+    async (source?: string) => {
+      const val = (source ?? custom).trim();
+      if (!val || testing) return;
+      setTesting(true);
+      setTestResult(null);
+      try {
+        const res = await ayamApi.testCameraSource(val);
+        setTestResult(res);
+      } catch (e) {
+        if (e instanceof PinRequiredError) {
+          toast.info(t.pinDibutuhkan);
+          return;
+        }
+        toast.error(t.kameraTesGagal, {
+          description: e instanceof Error ? e.message : undefined,
+        });
+      } finally {
+        setTesting(false);
+      }
+    },
+    [custom, testing, t]
+  );
 
   // ===== Preset: simpan sumber aktif sebagai preset (upsert by name) =====
   const savePreset = useCallback(async () => {
@@ -588,6 +621,47 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
                     t.terapkanSumber
                   )}
                 </Button>
+              </div>
+              {/* Tes koneksi (ronde 9): periksa sumber sebelum diterapkan */}
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void runTest()}
+                  disabled={testing || !custom.trim()}
+                  title={t.kameraTesHint}
+                  className="h-7 gap-1.5 border-zinc-800 bg-zinc-900 px-2.5 text-[11px] font-medium text-zinc-400 hover:border-sky-500/50 hover:bg-zinc-800 hover:text-sky-400 disabled:opacity-50"
+                >
+                  {testing ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <PlugZap className="h-3 w-3" />
+                  )}
+                  {testing ? t.kameraTesMenguji : t.kameraTes}
+                </Button>
+                {testResult ? (
+                  <span
+                    role="status"
+                    className={`inline-flex min-w-0 items-center gap-1.5 rounded-md border px-2 py-0.5 text-[10px] font-semibold ${
+                      testResult.ok
+                        ? "border-emerald-900 bg-emerald-950 text-emerald-400"
+                        : "border-red-900 bg-red-950 text-red-400"
+                    }`}
+                  >
+                    {testResult.ok ? (
+                      <ShieldCheck className="h-3 w-3 shrink-0" />
+                    ) : (
+                      <ShieldX className="h-3 w-3 shrink-0" />
+                    )}
+                    <span className="truncate">
+                      {testResult.ok
+                        ? `${t.kameraTesOk} · ${testResult.width}×${testResult.height} · ${Math.round(testResult.fps)} fps · ${testResult.elapsed_ms} ms`
+                        : testResult.error || t.kameraTesGagal}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="truncate text-[10px] text-zinc-600">{t.kameraTesHint}</span>
+                )}
               </div>
               <p className="text-[11px] leading-relaxed text-zinc-500">
                 {t.sumberKameraDesc}

@@ -180,6 +180,10 @@ html.light {
   /* variabel khusus grafik & overlay */
   --chart-grid: #e4e4e7;
   --chart-tick: #71717a;
+  --chart-cursor: #e4e4e7;
+  --tooltip-bg: #ffffff;
+  --tooltip-border: #d4d4d8;
+  --tooltip-text: #18181b;
 
   /* ronde 8: variabel semantik — tanpa ini CardTitle/dll tetap putih di
      light mode (html membawa class "dark light" sekaligus, .dark menang
@@ -192,6 +196,10 @@ html.light {
 html:not(.light) {
   --chart-grid: #27272a;
   --chart-tick: #71717a;
+  --chart-cursor: #18181b;
+  --tooltip-bg: #09090b;
+  --tooltip-border: #3f3f46;
+  --tooltip-text: #f4f4f5;
 }
 
 /* Perbaikan kombinasi spesifik di mode terang:

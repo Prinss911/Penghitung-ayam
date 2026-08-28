@@ -313,6 +313,20 @@ export const dict = {
     targetDari: "dari target",
     aksiTarget: "Ubah target harian",
     simpan: "Simpan",
+    // Ronde 9 — grafik capaian mingguan
+    capaiTarget: "hari capai target",
+    total7Hari: "Total 7 hari",
+    tooltipSesi: "sesi",
+    tooltipTercapai: "Target tercapai",
+    tooltipBelum: "belum capai target",
+    // Ronde 9 — tes koneksi kamera
+    kameraTes: "Tes koneksi",
+    kameraTesMenguji: "Menguji…",
+    kameraTesOk: "Koneksi OK",
+    kameraTesGagal: "Gagal koneksi",
+    kameraTesHint: "Periksa sumber sebelum diterapkan",
+    // Ronde 9 — indikator ganti sumber
+    menyiapkanVideo: "Menyiapkan video…",
   },
   en: {
     appName: "Ayam Counter Pro",
@@ -613,6 +627,20 @@ export const dict = {
     targetDari: "of target",
     aksiTarget: "Change daily target",
     simpan: "Save",
+    // Round 9 — weekly achievement chart
+    capaiTarget: "days on target",
+    total7Hari: "7-day total",
+    tooltipSesi: "session(s)",
+    tooltipTercapai: "Target met",
+    tooltipBelum: "below target",
+    // Round 9 — camera connection test
+    kameraTes: "Test connection",
+    kameraTesMenguji: "Testing…",
+    kameraTesOk: "Connection OK",
+    kameraTesGagal: "Connection failed",
+    kameraTesHint: "Verify the source before applying",
+    // Round 9 — source switching indicator
+    menyiapkanVideo: "Preparing video…",
   },
 } as const;
 

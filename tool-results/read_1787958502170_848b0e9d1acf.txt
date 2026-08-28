@@ -1,202 +1,3 @@
-     1→# Worklog — Ayam Counter Pro
-     2→
-     3→---
-     4→
-     5→Task ID: 1
-     6→Agent: Z.ai Code (main)
-     7→Date: 2026-08-28
-     8→Task: Unduh project dari gofile (https://gofile.io/d/D7wNOPjz), ekstrak, jalankan backend Flask + YOLOv8 sebagai mini-service, dan bangun dashboard Next.js bilingual di port 3000.
-     9→
-    10→Work Log:
-    11→- Download gofile via API (guest account + intercept download URL dari headless browser): `ayam-counter-web-FINAL-bilingual-2026-08-23_03-25-28.zip` (240 MB) → diekstrak ke `/home/z/ayam-counter-web`.
-    12→- Analisis project: sistem penghitung ayam real-time (YOLOv8 + Flask + Flask-SocketIO + OpenCV), sumber RTSP CCTV, model `models/best_shackle.pt`, kelas: Shackle-Detection 2 (berisi) & 3 (kosong).
-    13→- Install dependencies Python 3.12 di venv `/home/z/.venv`: torch 2.13.0+cpu, torchvision 0.28.0+cpu, ultralytics, opencv-python-headless 4.13, flask 3, flask-socketio, python-socketio, pandas, openpyxl, numpy 2.1.3.
-    14→- Fix CRLF → LF pada seluruh file .py + template (file asli Windows line endings).
-    15→- Fix import legacy: `modules.simple_counter` → `app.services.simple_counter`, `from config` → `from app.config` (hybrid_counter, tracker, direct_counter, camera). `modules/` lama sudah kosong.
-    16→- Update `.env`: CAMERA_SOURCE → `/home/z/ayam-counter-web/video_shackle_berisi.mp4` (RTSP 192.168.1.70 tidak dapat dijangkau di sandbox; video diputar loop sebagai demo).
-    17→- Perbaikan `app/app.py`:
-    18→  - `capture_thread()`: pacing FPS untuk sumber file video + loop ulang otomatis saat video habis + status `camera_connected`.
-    19→  - Tambahan REST API: `/api/device` (profil hardware + status kamera/model), `/api/history`, `/api/session/start`, `/api/session/stop`, `/api/reset` (untuk frontend Next.js via gateway).
-    20→  - Refactor: `_do_start_session()` / `_do_stop_session()` dipakai bersama SocketIO & REST.
-    21→  - `_drain_frame_queue()` saat start/stop mencegah frame sisa terhitung.
-    22→- Perbaikan `database.py`: tambah `add_session()` agar riwayat sesi benar-benar tersimpan (sebelumnya tidak pernah di-insert).
-    23→- Backend dijalankan sebagai mini-service: `/home/z/my-project/mini-services/ayam-backend/` (start.sh menjalankan `python3 -m app.app` dari project root dengan PYTHONPATH app dir, port 5000, log: `/home/z/ayam-backend.log`).
-    24→- Frontend Next.js baru (menggantikan template Flask):
-    25→  - `src/lib/ayam/i18n.ts` — kamus bilingual ID/EN lengkap.
-    26→  - `src/lib/ayam/api.ts` — API client (semua request relative + `XTransformPort=5000` untuk gateway Caddy).
-    27→  - `src/components/ayam/use-ayam-dashboard.ts` — hook: SocketIO realtime (`io('/?XTransformPort=5000', {path:'/socket.io/', query:{XTransformPort:'5000'}})`) + fallback/sinkron polling REST tiap 2s.
-    28→  - `src/components/ayam/video-feed.tsx` — renderer MJPEG via canvas + fetch streaming (SOI/EOI JPEG parser). `<img>` multipart hitam di headless Chromium; canvas 100% andal.
-    29→  - `src/app/page.tsx` — dashboard lengkap: header sticky (badge koneksi, toggle ID/EN), 4 stat cards, video feed live, panel kontrol sesi (form asal/tanggal/jam/keterangan, tombol Mulai/Hentikan/Reset), kartu ringkasan harian, info hardware, daftar ekspor Excel + unduh, tabel riwayat sesi, footer sticky (mt-auto + safe-area).
-    30→- `bun run lint` → 0 error 0 warning.
-    31→
-    32→Stage Summary:
-    33→- Backend Flask (port 5000): ✅ running, model YOLO loaded (CPU FP32, verified), video loop berjalan.
-    34→- Gateway Caddy (port 81): ✅ `XTransformPort` → 5000 berfungsi untuk REST, MJPEG, dan WebSocket SocketIO.
-    35→- Frontend (port 3000): ✅ dashboard terverifikasi via agent-browser pada 1440x900 & 390x844.
-    36→- Golden path terverifikasi end-to-end: Mulai sesi → deteksi YOLO live (bbox + confidence di video) → counter real-time via socket (frontend = overlay video, 14→23 ayam) → Hentikan → Excel tersimpan (`ayam_Farm Citayam 07_...xlsx`) → riwayat masuk SQLite → UI refresh.
-    37→- Bahasa ID/EN berfungsi; reset counter berfungsi; ekspor dapat diunduh via gateway.
-    38→
-    39→Arsitektur:
-    40→```
-    41→Browser → Caddy :81 (preview)
-    42→  ├── /                     → Next.js :3000 (dashboard UI)
-    43→  └── /api/*, /video_feed,  → Flask :5000 (YOLOv8 detection + SocketIO)
-    44→      /socket.io/  (query XTransformPort=5000)
-    45→```
-    46→
-    47→Catatan penting untuk agen berikutnya:
-    48→- `<img>` untuk MJPEG tampil hitam di headless Chromium (data ada di bitmap tapi tidak di-paint). SELALU gunakan komponen `VideoFeed` (canvas + fetch streaming) untuk video.
-    49→- Sumber kamera di sandbox adalah file video loop (`video_shackle_berisi.mp4`, 978x660). Untuk produksi, kembalikan `.env` CAMERA_SOURCE ke RTSP Dahua.
-    50→- Restart backend: `pkill -f "app.app"` lalu `cd /home/z/my-project/mini-services/ayam-backend && bash start.sh` (background).
-    51→- Jangan jalankan `bun run build` (sandbox); gunakan dev server.
-    52→- Count line X=112, zone width=100, confidence 0.25 (bisa diubah via .env).
-    53→
-    54→Ide pengembangan berikutnya (prioritas):
-    55→1. Halaman/panel pengaturan runtime (ubah count line, zone, confidence dari UI + simpan ke .env).
-    56→2. Grafik tren penghitungan per jam (recharts) dari data sesi.
-    57→3. Mode deteksi file video upload (selain kamera/loop).
-    58→4. Notifikasi suara/visual saat count milestone.
-    59→5. Export CSV selain Excel; filter riwayat berdasarkan tanggal.
-    60→6. Dark/light theme toggle (next-themes sudah tersedia).
-    61→
-    62→---
-    63→
-    64→Task ID: 2
-    65→Agent: Z.ai Code (cron webDevReview ronde 2)
-    66→Date: 2026-08-28
-    67→Task: QA berkala + pengembangan fitur baru (pengaturan runtime, grafik, milestone, filter riwayat, CSV, styling polish).
-    68→
-    69→Work Log:
-    70→- QA awal: layanan sehat (Flask :5000, Next.js :3000, gateway :81), dashboard live video OK, tanpa error console.
-    71→- BACKEND (app/app.py):
-    72→  - `GET/POST /api/settings` — confidence, count_line_x, zone_width; POST langsung mengubah Config + counter + detector (live-apply tanpa restart) dan persist ke `.env` via `_update_env_file()`.
-    73→  - `GET /api/timeline` — timeline kumulatif sesi berjalan dari `counter.count_history` (elapsed detik + total) untuk grafik.
-    74→  - `GET /api/download/csv/<filename>` — konversi xlsx → CSV on-the-fly via pandas.
-    75→- FRONTEND:
-    76→  - `settings-dialog.tsx` — dialog Pengaturan Deteksi (3 slider: confidence 5–95%, garis hitung 0–480px, zona 10–300px; badge nilai, hint teks, indikator dirty, toast sukses/gagal).
-    77→  - `session-trend-chart.tsx` — AreaChart recharts (gradasi amber) tren kumulatif + badge LIVE saat sesi aktif.
-    78→  - Grafik "Ringkasan 7 Hari" — BarChart biru total ayam/hari (agregasi dari riwayat) + badge Sesi Hari Ini & Ayam Hari Ini.
-    79→  - `animated-number.tsx` — angka count-up easeOutCubic (rAF) untuk kartu total.
-    80→  - Milestone: toast + beep WebAudio setiap kelipatan 10 ayam (sinkron reset saat sesi baru/reset).
-    81→  - Riwayat: pencarian asal ayam + filter tanggal + badge jumlah hasil + tombol "tampilkan semua".
-    82→  - Ekspor: tombol unduh CSV (ikon FileDown) di tiap baris + badge jumlah file.
-    83→  - Styling: animasi masuk framer-motion bertahap per section, hover lift + glow shadow per-aksen pada stat card, top gradient line, ikon scale on hover.
-    84→  - Bahasa dipersist ke localStorage (`ayam-lang`) — tidak reset saat reload.
-    85→- Verifikasi agent-browser: dialog settings (ubah 25%→35%→terapkan→backend `confidence:0.35` + .env tertulis → dikembalikan 0.25); sesi penuh Kandang Rondomestik = 31 ayam tercatat, Excel 7.2KB tersimpan, riwayat 4 sesi; filter "farm" → 2 hasil; grafik tren & 7-hari tampil benar; EN/ID + persist OK; lint 0 error.
-    86→- Bersih-bersih: hapus sesi liar "Unknown" (file xlsx + baris DB) akibat klik test yang meleset.
-    87→
-    88→Temuan & perbaikan kecil:
-    89→- `agent-browser find --name "EN"` ternyata cocok substring ke tombol lain (membuka dialog Pengaturan secara tak sengaja). Pelajaran: untuk nama pendek, gunakan eval DOM click dengan exact match (`textContent.trim()==='EN'`).
-    90→- Tombol X dialog Radix tidak punya `aria-label="Close"` (accessible name dari sr-only span) — gunakan Escape untuk menutup via otomasi.
-    91→
-    92→Stage Summary:
-    93→- Semua layanan sehat; lint bersih; dashboard v2.1 dengan 6 fitur baru terverifikasi end-to-end.
-    94→- Backend: 3 endpoint baru (/api/settings GET+POST, /api/timeline, /api/download/csv) — semuanya teruji via curl & UI.
-    95→- Data uji di DB: 3 sesi (TEST-FARM 7, Farm Citayam 07 23, Kandang Rondomestik 31).
-    96→
-    97→Risiko / catatan:
-    98→- Saat restart backend, grafik tren sesi hilang (in-memory by design); riwayat & ekspor tetap aman di SQLite/Excel.
-    99→- Nilai .env sekarang: CONFIDENCE_THRESHOLD=0.25, COUNT_LINE_POSITION=112, ZONE_WIDTH=100 (dipulihkan setelah pengujian).
-   100→- Bahasa disimpan di localStorage browser sandbox — preview user baru mulai dari ID.
-   101→
-   102→Rekomendasi ronde berikutnya (prioritas):
-   103→1. Halaman detail sesi (klik baris riwayat → detail deteksi per menit + grafik).
-   104→2. Deteksi file video upload (mode demo selain loop).
-   105→3. Theme light/dark toggle (next-themes).
-   106→4. Notifikasi browser (Notification API) untuk milestone saat tab di background.
-   107→5. Auto-refresh pengaturan di kartu Backend saat diubah dari dialog (saat ini perlu reload halaman untuk refresh confidence di kartu).
-   108→
-   109→---
-   110→Task ID: 3
-   111→Agent: Z.ai Code (cron webDevReview ronde 3)
-   112→Date: 2026-08-28
-   113→Task: QA berkala + assessment status; fokus ronde ini: perbaikan bug hardening sesi + fitur baru (hapus/detail riwayat, tema light/dark, self-healing backend, timer durasi).
-   114→
-   115→Work Log:
-   116→- QA awal via agent-browser: layanan sehat, video live, TANPA error console. Temuan: sesi liar "Unknown" (45+ ayam) aktif — pelaku: automasi browser ronde sebelumnya yang menyelesaikan QA-nya tepat sebelum sesi ini mulai (log: POST /api/session/start 16:25:12, sebelum perintah pertama ronde ini 16:26:45).
-   117→- BUG #1 (data loss, fix backend app.py): `_do_start_session` menimpa sesi aktif TANPA menyimpan sesi lama → buffer Excel hilang + tidak masuk DB. Fix: guard overwrite — auto stop&save sesi lama dulu.
-   118→- BUG #2 (durasi selalu 0, fix database.py + app.py): `add_session` menulis start_time=end_time=now. Fix: global `session_started_at` di-set saat start, dikirim ke `add_session(start_time=...)`. Terverifikasi: sesi 12 dtk → durasi 12.3s di API; dialog detail menampilkan "34 sec / 14.0 chickens/min".
-   119→- BUG #3 (delete 500, fix database.py): tabel `detections` skema lama TIDAK punya kolom `session_id` → DELETE gagal "no such column". Fix: cek PRAGMA table_info dulu, skip cleanup detections bila kolom tidak ada.
-   120→- Cleanup: hapus file liar `exports/ayam_Unknown_..._154839.xlsx`; sesi liar dibuang via restart backend.
-   121→- BACKEND BARU: `DELETE /api/history/<id>` (hapus row DB + file Excel terkait, basename-safe) dan `GET /api/history/<id>` (detail sesi). `get_history` kini menyertakan `keterangan` + `file_name`.
-   122→- MINI-SERVICE DISCOVERY PENTING: sandbox MENGHAPUS proses background yang di-spawn dari perintah Bash tool (~30-60 dtk, apapun setsid/nohup/bun run dev). Solusi: route Next.js `src/app/api/ayam-backend/route.ts` — GET health, POST spawn `start.sh` detached DARI PROSES next-server (cgroup boot, kebal reaper). Backend kini child of next-server dan TAHAN LAMA. Round 1-2 kebetulan selamat karena dijalankan saat sesi agent masih hidup.
-   123→- SELF-HEALING: `use-ayam-dashboard` — 3x polling gagal berurutan → panggil POST /api/ayam-backend (auto-restart). Toast "Backend dinyalakan ulang" saat offline + "kembali online" saat pulih + video feed auto-reconnect (autoRetryKey) TANPA klik manual. Terverifikasi 2x: kill backend → pulih otomatis ~50 dtk, video hidup sendiri.
-   124→- FRONTEND BARU:
-   125→  - Validasi wajib "Asal Ayam": tombol Mulai disabled + hint amber + border amber saat kosong; tidak ada lagi sesi "Unknown" dari klik liar.
-   126→  - Hapus sesi riwayat: tombol trash per baris (muncul on hover) + AlertDialog konfirmasi + toast; file Excel ikon terhapus di backend.
-   127→  - Dialog Detail Sesi (klik baris riwayat): origin highlight, total, durasi, rata-rata ayam/menit, tanggal/jam, catatan, file Excel + tombol unduh.
-   128→  - Timer durasi sesi berjalan (mm:ss dari timeline backend) di kartu info sesi.
-   129→  - Datalist asal ayam (quick-pick dari riwayat unik, max 12).
-   130→  - SettingsDialog `onSaved` → kartu Backend langsung refresh (tidak perlu reload halaman).
-   131→  - Theme toggle 🌙/☀️ di header: localStorage `ayam-theme` + script no-flash di layout.tsx.
-   132→  - LIGHT THEME penuh via override CSS var Tailwind v4 (`html.light { --color-zinc-*: ... }` + tint badge -950→terang, -400→gelap kontras + fix spesifisitas tombol amber + color-scheme + scrollbar + chart var). Chart recharts kini pakai `var(--chart-grid)`/`var(--chart-tick)`.
-   133→  - Header mobile: teks badge koneksi disembunyikan di <sm agar judul app tidak tergusur.
-   134→- Verifikasi agent-browser: light+dark theme (persist via reload), sesi penuh Farm Sukabumi 01 (8 ayam, 34 dtk), detail dialog EN/ID, delete sesi #11 (row + file hilang), timer 01:08 live, mobile 390px (header, video retry), self-healing 2x. `bun run lint` → 0 error.
-   135→
-   136→Stage Summary:
-   137→- Dashboard v2.2: bug data-loss & durasi & delete diperbaiki; 6 fitur baru (hapus riwayat, detail sesi, tema light/dark, self-healing, timer durasi, datalist+onSaved refresh); styling light theme menyeluruh.
-   138→- Backend: 3 endpoint baru (DELETE history, GET history detail, termasuk keterangan+file_name) + 2 bug fix + 1 schema-guard.
-   139→- Data uji: sesi #10 Farm Uji Coba R3 (32), #12 Farm Sukabumi 01 (8) — sengaja disimpan sebagai data demo.
-   140→- Infrastruktur: backend Flask kini dikelola via /api/ayam-backend (Next.js manager) — CARA TUNGGAL untuk menjalankan backend di sandbox ini.
-   141→
-   142→Risiko / catatan:
-   143→- Jika kontainer di-restart, /start.sh otomatis menjalankan mini-services (bun run dev di ayam-backend) — tetap berlaku.
-   144→- Jangan jalankan backend via `bash start.sh` langsung dari Bash tool — akan ter-reap dalam ~1 menit. Gunakan POST /api/ayam-backend.
-   145→- Sesi lama (id ≤10) punya start_time=end_time → dialog detail menampilkan durasi 0; hanya sesi baru yang benar.
-   146→- Nilai .env: CONFIDENCE_THRESHOLD=0.25, COUNT_LINE_POSITION=112, ZONE_WIDTH=100 (default).
-   147→- Viewer pertama kali: bahasa default ID, tema default dark; keduanya persist di localStorage browser masing-masing.
-   148→
-   149→Rekomendasi ronde berikutnya (prioritas):
-   150→1. Halaman pengaturan kamera/sumber (RTSP vs video) dari UI.
-   151→2. Mode deteksi file upload (demo selain loop).
-   152→3. Notifikasi browser (Notification API) untuk milestone saat tab di background.
-   153→4. Simpan timeline per-menit ke DB agar grafik sesi bertahan setelah restart backend.
-   154→5. Paginasi/limit riwayat + pencarian di dialog detail (saat ini pakai data baris).
-   155→
-   156→---
-   157→Task ID: 4
-   158→Agent: Z.ai Code (cron webDevReview ronde 4)
-   159→Date: 2026-08-28
-   160→Task: QA berkala + assessment; fokus ronde: menuntaskan fitur yang setengah jadi (upload video UI, koreksi hitung manual UI, grafik timeline di detail sesi) + perbaikan bug + polish styling.
-   161→
-   162→Work Log:
-   163→- QA awal via agent-browser: semua layanan sehat (Next :3000, Flask :5000, Caddy :81), video live + YOLO berjalan, TANPA error console. Dashboard v2.3 dari ronde sebelumnya render sempurna (dark).
-   164→- TEMUAN PENTING: ada ronde sebelumnya (TIDAK tercatat di worklog) yang sudah menambahkan: dialog sumber kamera (camera-source-dialog.tsx + /api/camera-source GET/POST + upload di backend + notifikasi browser milestone + persist timeline JSON ke DB + api client uploadCameraVideo & adjustCount). Ronde ini memverifikasi semuanya, lalu MENUNTASKAN lapisan UI yang masih bolong.
-   165→- Cleanup data: hapus sesi QA sampah #14 "QA Adjust" (2) & #13 "Farm QA R4" (77) via UI delete + file Excel ikon terhapus (28→26 file). Terverifikasi.
-   166→- Verifikasi fitur ganti sumber kamera (ronde hantu): switch video_shackle_kosong ↔ berisi via UI → backend apply + toast + video + counter berubah. OK.
-   167→- BUG #1 (backend, upload ditolak "File kosong"): `size_mb = round(bytes/1MB, 1)` membuat file < 52 KB jadi 0.0 MB → checks `size_mb < 0.01` salah menolak. Fix app.py: validasi pakai byte mentah (> 300 MB tolak, < 10 KB tolak), size_mb hanya untuk display.
-   168→- BUG #2 (frontend/infra, upload 404 dari :3000): next.config.ts FLASK_PROXY_ROUTES hanya punya "/api/camera-source" eksak — POST multipart ke /api/camera-source/upload dan /api/count/adjust tidak ter-rewrite → 404 saat dashboard dibuka langsung dari port Next.js (via Caddy :81 aman). Fix: tambah "/api/camera-source/:path*" dan "/api/count/adjust". Next dev auto-reload config.
-   169→- BUG #3 (frontend, runtime error): refactor SessionDetailDialog (pola keyed body component agar reset detail tanpa setState-in-effect — lint react-hooks/set-state-in-effect) menyisakan <Dialog open onOpenChange> di body yang propertinya tak ada → "onOpenChange is not defined" saat klik baris riwayat. Fix: body merender <DialogContent> saja di dalam <Dialog> induk.
-   170→- BUG #4 (UX kecil): reload halaman di tengah sesi count tinggi → toast milestone palsu meledak ("120 ayam"). Fix: firstCountObserved ref — observasi count pertama tidak memicu milestone.
-   171→- FITUR BARU A (upload video UI): CameraSourceDialog kini punya drop-zone (drag&drop + klik pilih file, dashed border, hover amber), progress bar XHR %, validasi ekstensi/ukuran di klien, i18n penuh ID/EN. Upload via browser E2E: test-upload.mp4 → tersimpan `upload_test-upload_...mp4`, langsung jadi sumber, muncul & aktif di daftar video, feed canvas menampilkan video baru.
-   172→- FITUR BARU B (koreksi manual +1/−1): saat sesi aktif, kotak info sesi emerald punya baris "Koreksi Manual" + tombol − / + (hover scale, spinner saat busy, aria-label). Backend mencatat ke timeline + baris Excel 'Manual'. Terverifikasi: 6 →(−1)→ toast "Hitungan dikoreksi (−1)" → 8; (+1) masuk hitungan; sesi #15 tersimpan 129.
-   173→- FITUR BARU C (grafik timeline detail sesi): SessionDetailDialog mengambil GET /api/history/<id> (kini termasuk `timeline` dari DB) dan merender AreaChart kumulatif amber (gradient, tooltip ID/EN, minTickGap) bila ≥2 poin; fallback teks "Tidak ada data timeline" untuk sesi lama. Dialog dibuat scrollable (max-h-88vh ayam-scroll). Terverifikasi di sesi #15: 131 poin, grafik mulus 0→129.
-   174→- STYLING: x-axis Tren Kumulatif tak lagi dobel label (minTickGap=36; sebelumnya "20s,20s,20s"); tombol koreksi & drop-zone polished; semua teks baru bilingual.
-   175→- Mobile 390x844 OK; EN lengkap; console bersih; `bun run lint` → 0 error.
-   176→- Data uji: sesi #15 "Farm Adjust QA" (129 ayam, timeline 131 poin) SENGAJA disimpan sebagai demo grafik detail.
-   177→
-   178→Stage Summary:
-   179→- Dashboard v2.4: 3 fitur baru (upload video sumber kamera, koreksi manual hitung, grafik kumulatif di detail sesi) + 4 bug fix (upload validation, gateway rewrite 404, detail dialog crash, milestone palsu).
-   180→- Backend: 1 patch (validasi byte upload). Semua endpoint lama stabil.
-   181→- Fitur ronde-hantu (sumber kamera runtime + notifikasi browser + persist timeline) kini terverifikasi penuh & punya UI lengkap.
-   182→- Lint bersih; QA agent-browser end-to-end pass (desktop + mobile, ID + EN).
-   183→
-   184→Risiko / catatan:
-   185→- Upload file besar (>~50 MB) via gateway :81/Caddy belum diuji — di :3000 OK (file uji kecil). Perlu uji file besar bila fitur dipakai operator.
-   186→- Sesi lama (id ≤ 14) tanpa timeline → dialog detail menampilkan fallback teks; hanya sesi baru punya grafik.
-   187→- File upload tersimpan di root backend dengan prefix `upload_` (tidak ada UI hapus video unggahan — bisa jadi ide ronde berikut).
-   188→- Nilai .env: CONFIDENCE_THRESHOLD=0.25, COUNT_LINE_POSITION=112, ZONE_WIDTH=100, CAMERA_SOURCE=video_shackle_berisi.mp4.
-   189→
-   190→Rekomendasi ronde berikutnya (prioritas):
-   191→1. Hapus/kelola video hasil unggahan dari dialog sumber kamera (list upload_ + tombol hapus).
-   192→2. Uji upload video besar (100-300 MB) + indikator "menyiapkan video" saat capture thread switch.
-   193→3. Ekspor laporan PDF harian (ringkasan sesi + grafik) — naikkan nilai produk.
-   194→4. Autentikasi sederhana (PIN operator) sebelum mulai/stop/hapus sesi untuk produksi.
-   195→5. Toast milestone saat sesi berjalan kini benar; pertimbangkan suara berbeda untuk koreksi manual.
-   196→
-   197→---
-   198→Task ID: 5
-   199→Agent: Z.ai Code (cron webDevReview ronde 5)
    200→Date: 2026-08-28
    201→Task: QA berkala + assessment; fokus ronde: kelola video unggahan (hapus), laporan harian PDF, kolom durasi/rata-rata di tabel riwayat, restyle grafik mingguan + polish.
    202→
@@ -368,3 +169,68 @@
    368→4. Export log aktivitas ke CSV/PDF untuk audit kepatuhan.
    369→5. Per-IP rate limiting (remote_addr) bila nanti multi-terminal.
    370→
+   371→---
+   372→Task ID: 8-a
+   373→Agent: Z.ai Code (backend subagent)
+   374→Date: 2026-08-28
+   375→Task: Backend ronde 8 — persist last_session antar restart (tabel app_state), filter + paginasi + export CSV log aktivitas, target harian (TARGET_HARIAN) dengan persist .env.
+   376→
+   377→Work Log:
+   378→- Baca worklog ronde 6-7 (7-a) + app.py (2010 baris) / database.py / config.py / .env / start.sh. Proses lama di-stop (ditemukan 2 proses: PID 24987 dari ronde 7 + orphan 31354; supervisor next-server otomatis me-respawn backend saat mati — 2x percobaan start.sh kalah race bind port 5000, aman karena kode sama; state akhir: backend sehat via respawn supervisor). py_compile OK (app.py, database.py, config.py), LF endings dipertahankan, verifikasi lengkap via curl :5000.
+   379→- database.py: tabel baru app_state (key TEXT PRIMARY KEY, value TEXT) di init_db(); metode get_state (default None saat absen/error), set_state (upsert ON CONFLICT), delete_state — semuanya try/except + print, tak pernah melempar exception. Extend get_audit_log(limit=100, offset=0, action=None) → WHERE action = ? + LIMIT ? OFFSET ?; metode baru get_audit_total(action) (COUNT terfilter) & get_audit_actions() (GROUP BY action ORDER BY n DESC → [{action, n}]).
+   380→- app.py TASK 1 PERSIST last_session: _do_stop_session() setelah set last_session_summary/last_session_timeline → db.set_state("last_session", json.dumps({summary, timeline: points})) (try/except, tak pernah gagalkan stop). Fungsi baru _restore_last_session() (baca app_state, parse JSON, set 2 global; JSON invalid → biarkan None) dipanggil di __main__ SEBELUM start_threads() dengan print "[STARTUP] Restored last_session from DB (total=N, N timeline points)". _do_start_session() & /api/reset → db.delete_state("last_session") saat globals dikosongkan.
+   381→- app.py TASK 2 AUDIT: GET /api/audit kini terima ?limit (clamp 1..500), ?offset (>=0), ?action → response {"entries", "total", "actions"}. Endpoint baru GET /api/audit/export (PIN via _pin_guard, ?action opsional): csv.writer ke io.StringIO, header id,ts,action,detail, prepend BOM "\ufeff", mimetype text/csv, Content-Disposition attachment filename="log_aktivitas_YYYYMMDD_HHMMSS.csv", setelah guard sukses _audit("audit_export", "{n} rows"). Flask route /api/audit vs /api/audit/export GET keduanya OK.
+   382→- app.py TASK 3 TARGET HARIAN: config.py Config.TARGET_HARIAN = int(os.getenv('TARGET_HARIAN','0')) dibungkus try/except default 0; .env + TARGET_HARIAN=250. Endpoint GET /api/target (tanpa PIN, {"target": Config.TARGET_HARIAN}) & POST /api/target (PIN; validasi int 0..1000000, selain itu 400 {"error":"invalid_target"}; set Config + persist _update_env_file + _audit("target")). /api/stats (REST get_stats) & payload socketio "update_stats" di detection_thread masing-masing + kunci "target" (get_stats_socket ikut +1 kunci demi konsistensi — non-breaking).
+   383→
+   384→VERIFIKASI (curl, semua OK):
+   385→- audit: ?limit=2 → 2 entri + total=26 (int) + actions (10 jenis dgn n); ?limit=5&action=pin_verify_ok → hanya 3 entri aksi itu; ?limit=2&offset=2 → id [25,24] ≠ offset=0 [27,26].
+   386→- export: tanpa PIN → 401 {"error":"pin_required"}; dgn X-Operator-Pin:1234 → CSV header id,ts,action,detail, byte BOM EF BB BF terkonfirmasi (od), Content-Type text/csv + filename="log_aktivitas_20260828_223427.csv"; ?action=pin_verify_ok → 3 baris terfilter.
+   387→- target: GET → {"target":250}; POST 300 tanpa PIN → 401; dgn PIN → {"status":"ok","target":300}; GET → 300; .env TARGET_HARIAN=300; invalid (-5, "abc", 2000000) → 400 invalid_target; POST balik 250 → .env kembali 250.
+   388→- E2E persist: start "QA R8 Persist" (PIN) → 15s → count 2→4 → stop (total=4, durasi 22.6s) → stats.last_session total=4; app_state berisi row last_session; RESTART backend (proses baru PID 32338) → log "[STARTUP] Restored last_session from DB (total=4, 4 timeline points)" → GET /api/stats MASIH last_session sama (total=4, QA R8 Persist) → /api/timeline 4 poin saat inactive → POST /api/reset (PIN) → last_session null + timeline [] + app_state KOSONG.
+   389→- Cleanup: history #21 QA R8 Persist dihapus via DELETE (file_removed:true), 0 baris QA tersisa (6 sesi demo tetap).
+   390→
+   391→Stage Summary:
+   392→- Backend v2.8 (ronde 8): 3 fitur — last_session persist ke SQLite tabel app_state (kartu "Sesi terakhir" + grafik bertahan restart backend; fix catatan risiko ronde 7), log aktivitas dgn filter aksi + paginasi + total + daftar aksi + export CSV Excel-friendly (BOM) terproteksi PIN, target harian yang bisa diubah runtime + persist .env + ter-export di stats/socket.
+   393→- Endpoint baru/berubah: GET /api/audit (+offset/action/total/actions), GET /api/audit/export (PIN, CSV), GET+POST /api/target, /api/stats & socket update_stats (+target). database.py: +tabel app_state, +3 metode state, get_audit_log extended, +get_audit_total, +get_audit_actions.
+   394→- .env kini: CAMERA_SOURCE, CONFIDENCE_THRESHOLD=0.25, COUNT_LINE_POSITION=112, ZONE_WIDTH=100, OPERATOR_PIN=1234, PIN_ENABLED=true, TARGET_HARIAN=250.
+   395→- Catatan infrastruktur: backend otomatis di-respawn oleh proses next-server saat mati (supervisor di sisi frontend dev) — start.sh manual bisa kalah race bind port; hasil akhir tetap 1 proses sehat dgn kode baru. Layak diketahui main agent bila nanti mengelola restart manual.
+   396→- Backend RUNNING sehat (PID 32338, python3 -m app.app, 127.0.0.1:5000), py_compile OK, LF endings, semua endpoint 200.
+   397→
+   398→
+   399→---
+   400→Task ID: 8 (frontend + integrasi + QA)
+   401→Agent: Z.ai Code (main)
+   402→Date: 2026-08-28
+   403→Task: Ronde 8 — QA berkala via agent-browser, lalu: filter+paginasi+CSV di Log Aktivitas, fitur Target Harian (backend 8-a + UI), persistensi last_session, styling polish (mobile fix, light mode fix, animasi).
+   404→
+   405→Work Log:
+   406→- QA awal: Next :3000 & Flask :5000 sehat (model loaded, FPS 8), dashboard render bersih 0 console error. Ditemukan: StatCard nilai "Nonaktif" terpotong jadi "Non..." di 390px (mobile bug). Status v2.7 stabil → lanjut fitur ronde 8 sesuai rekomendasi ronde 7 (#2 persist last_session, #3 filter log, #4 export log).
+   407→- BACKEND (Task 8-a, subagent — entri lengkap di atas): last_session persist ke tabel app_state (SQL) → bertahan restart backend; /api/audit +offset/+action/+total/+actions (daftar aksi unik + count utk dropdown); GET /api/audit/export CSV (PIN, BOM UTF-8, filter ikut `action`); TARGET_HARIAN di .env + GET/POST /api/target (POST PIN-protected, audit "target"); /api/stats & socket payload +key target. Semua diverifikasi curl + E2E persist (start→stop→restart→last_session tetap→reset→bersih).
+   408→- next.config.ts: rewrite baru /api/audit/:path* (untuk export CSV) & /api/target.
+   409→- api.ts: AuditLogResponse/AuditActionCount types; getAuditLog(limit, offset, action?); downloadAuditCsv(action?) — fetch blob + header PIN + filename dari Content-Disposition + anchor sementara; getTarget/setTarget; Stats +target?.
+   410→- i18n.ts: ~20 kunci baru ID/EN (logFilterSemua, logMuatLagi, logUnduhCsv, logCsv*, logMemuat, logEntri, targetHarian + 10 kunci target*, aksiTarget, aksiAuditExport, simpan).
+   411→- audit-log-dialog.tsx v2: Select filter per jenis aksi (ikon+warna per aksi + count), paginasi 50/halaman tombol "Muat lebih banyak (x/total)", tombol "Unduh CSV" (ikut filter, PIN-aware via PinRequiredError→gate global), badge total entri terfilter, empty-state menyesuaikan filter, ACTION_META +audit_export/+target, meta untuk aksi baru. Toolbar flex-wrap (fix overflow 390px — sebelumnya "Unduh CSV"/"Bersihkan log" terpotong).
+   412→- TARGET HARIAN UI (page.tsx): blok progress di kartu Ringkasan 7 Hari — label + nilai "247 / 250 · 99%" + tombol "Atur target" + progress bar gradasi amber (emerald saat ≥100% + badge "✓ 100%") + shine animation di dalam bar terisi (hanya 4<pct<100); Dialog edit (input numeric, 0=tanpa target, maks 1jt, PIN-protected; PinRequiredError→gate global terbuka, simpan→toast+refreshStats); toast perayaan "Target harian tercapai!" sekali per (hari, target) + beep.
+   413→- STYLING: StatCard responsive (value text-xl sm:text-2xl md:text-3xl, ikon h-8/w-8 di mobile) — fix "Nonaktif" terpotong; entrance stagger per kartu (motion.div delay 0/.06/.12/.18); background depth pindah inline-style → class .ayam-bg-layer + override html.light (grid kini terlihat di light mode — fix catatan kosmetik ronde 6); FIX LATENT: html membawa class "dark light" sekaligus → var semantik (--foreground/--card-foreground/--popover-foreground) tetap putih di light mode; kini dioverride di html.light → CardTitle kontras benar; hint dialog target dipertegas ("0 = Tanpa target · maks 1.000.000").
+   414→- VERIFIKASI E2E (agent-browser): 0 console error; target 230/250 · 92% tampil → ubah 200 via dialog → UI "✓ 100%" emerald + toast tercapai → kembali 250 (247/250 · 99% setelah sesi baru); audit: 65 entri → load more 50→65 (tombol jadi "65/65 entri") → filter "PIN salah" 7 entri + badge 7 → CSV unduh (toast sukses + audit backend "audit_export 7 rows") → "Ekspor CSV log" label benar (setelah tambah kunci aksiAuditExport); PIN gate muncul saat browser session baru coba POST (401→gate→1234→lanjut) — rantai proteksi utuh; last_session UI: sesi "Farm Sukabumi 02" start via UI → 17 ayam → stop → kartu amber "Sesi terakhir: Farm Sukabumi 02 · 17 ayam" → BACKEND DIKILL+respawn → reload → kartu TETAP menampilkan sesi tsb + grafik tren kumulatif sesi terakhir (76s) kembali (persistensi timeline OK); mobile 390px: stat card "Nonaktif" utuh, dialog audit muat (toolbar wrap), EN penuh (Daily Target/Set target/Download CSV), light mode: grid + judul kontras + progress bar OK.
+   415→- bun run lint → 0 error (beberapa kali). Lahan data: 28 entri audit "QA Paging" (preset save/delete pair) SENGAJA dibiarkan — demo filter; sesi "Farm Sukabumi 02" (17 ayam) disengaja tetap di riwayat agar kartu Sesi terakhir & grafik berisi; .env TARGET_HARIAN=250.
+   416→
+   417→Stage Summary:
+   418→- Dashboard v2.8 + Backend v2.8: Log Aktivitas kini bisa difilter per aksi, dipaginasi, dan diekspor CSV; Target Harian (persist .env, progres realtime vs total hari ini, perayaan saat tercapai); last_session & timeline persisten lintas restart backend; deretan polish styling (mobile stat card, light mode benar-benar kontras, grid terlihat, stagger animasi, shine progress).
+   419→- 3 rekomendasi ronde 7 tuntas (#2 persist last_session, #3 filter+paginasi, #4 export CSV — CSV bukan PDF).
+   420→- File berubah: next.config.ts, api.ts, i18n.ts, audit-log-dialog.tsx, page.tsx, globals.css + backend (app.py, database.py, config.py, .env).
+   421→
+   422→Risiko / catatan:
+   423→- Toast perayaan target memakai ref in-memory → muncul lagi jika halaman di-reload di hari yang sama dengan target sama (sekali per mount, bukan sekali per hari lintas reload).
+   424→- audit_export memakai format CSV; PDF belum (rekomendasi ronde 7 #4 menyebut CSV/PDF — CSV dipilih: lebih ringan untuk log).
+   425→- QA Paging preset entries (28) menambah noise di audit log — gunakan tombol Bersihkan log bila ingin bersih.
+   426→- Theme toggle hanya menambah class 'light' tanpa menghapus 'dark' (html bisa "dark light") — kini aman karena override semantik di html.light lebih spesifik; membersihkan toggle bisa jadi ronde berikutnya.
+   427→- Upload video besar (rekomendasi #1 ronde 7, terbuka sejak ronde 5) masih belum diuji.
+   428→
+   429→Rekomendasi ronde berikutnya (prioritas):
+   430→1. Uji upload video besar (100-300 MB) + indikator "menyiapkan video" saat switch sumber (terbuka sejak ronde 5).
+   431→2. Tanggal/histori target harian per hari (riwayat pencapaian target mingguan) + grafik garis target di Ringkasan.
+   432→3. Bersihkan ThemeToggle (hapus class 'dark' saat light) + audit rotasi otomatis (mis. keep 500 terakhir).
+   433→4. Notifikasi browser saat target tercapai (selaras milestone notif yang sudah ada).
+   434→5. Halaman/perset multi-kamera sudah ada — tambah test koneksi RTSP sebelum apply preset.
+   435→

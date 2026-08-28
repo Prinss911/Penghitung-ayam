@@ -1,0 +1,682 @@
+     1→"use client";
+     2→
+     3→/**
+     4→ * CameraSourceDialog — ganti sumber kamera runtime tanpa restart backend:
+     5→ * - Pilih dari video demo yang tersedia di server
+     6→ * - Isi URL RTSP / path file video / "0" untuk webcam
+     7→ * Pergantian diterapkan asinkron oleh capture thread (lihat /api/camera-source).
+     8→ */
+     9→
+    10→import { useCallback, useEffect, useRef, useState } from "react";
+    11→import {
+    12→  BookmarkPlus,
+    13→  Check,
+    14→  CloudUpload,
+    15→  Loader2,
+    16→  RadioTower,
+    17→  Trash2,
+    18→  Video,
+    19→  Webcam,
+    20→} from "lucide-react";
+    21→import { toast } from "sonner";
+    22→
+    23→import {
+    24→  Dialog,
+    25→  DialogContent,
+    26→  DialogDescription,
+    27→  DialogFooter,
+    28→  DialogHeader,
+    29→  DialogTitle,
+    30→  DialogTrigger,
+    31→} from "@/components/ui/dialog";
+    32→import {
+    33→  AlertDialog,
+    34→  AlertDialogAction,
+    35→  AlertDialogCancel,
+    36→  AlertDialogContent,
+    37→  AlertDialogDescription,
+    38→  AlertDialogFooter,
+    39→  AlertDialogHeader,
+    40→  AlertDialogTitle,
+    41→} from "@/components/ui/alert-dialog";
+    42→import { Button } from "@/components/ui/button";
+    43→import { Input } from "@/components/ui/input";
+    44→import { Badge } from "@/components/ui/badge";
+    45→import {
+    46→  ayamApi,
+    47→  PinRequiredError,
+    48→  type CameraPreset,
+    49→  type CameraSourceInfo,
+    50→} from "@/lib/ayam/api";
+    51→import type { Dict } from "@/lib/ayam/i18n";
+    52→
+    53→interface CameraSourceDialogProps {
+    54→  t: Dict;
+    55→  /** Dipanggil setelah sumber berhasil diterapkan (refresh info kamera) */
+    56→  onSaved?: () => void;
+    57→}
+    58→
+    59→function sourceLabel(src: string, t: Dict): string {
+    60→  if (src === "0") return t.webcam;
+    61→  if (src.startsWith("rtsp://")) return `RTSP — ${src.slice(0, 42)}${src.length > 42 ? "…" : ""}`;
+    62→  if (src.startsWith("http")) return `HTTP — ${src.slice(0, 40)}…`;
+    63→  const name = src.split("/").pop() ?? src;
+    64→  return `${t.videoLokal}: ${name}`;
+    65→}
+    66→
+    67→const ALLOWED_EXT = [".mp4", ".avi", ".mov", ".mkv"];
+    68→const MAX_UPLOAD_MB = 300;
+    69→
+    70→function videoExtOk(name: string): boolean {
+    71→  const ext = name.slice(name.lastIndexOf(".")).toLowerCase();
+    72→  return ALLOWED_EXT.includes(ext);
+    73→}
+    74→
+    75→export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
+    76→  const [open, setOpen] = useState(false);
+    77→  const [loading, setLoading] = useState(false);
+    78→  const [applying, setApplying] = useState(false);
+    79→  const [info, setInfo] = useState<CameraSourceInfo | null>(null);
+    80→  const [custom, setCustom] = useState("");
+    81→  const [uploading, setUploading] = useState(false);
+    82→  const [uploadPct, setUploadPct] = useState(0);
+    83→  const [dragOver, setDragOver] = useState(false);
+    84→  const [deleteVideoName, setDeleteVideoName] = useState<string | null>(null);
+    85→  const [deleteVideoBusy, setDeleteVideoBusy] = useState(false);
+    86→  // ===== Preset kamera (ronde 7) =====
+    87→  const [presets, setPresets] = useState<CameraPreset[]>([]);
+    88→  const [presetName, setPresetName] = useState("");
+    89→  const [presetBusy, setPresetBusy] = useState(false);
+    90→  const [deletePresetName, setDeletePresetName] = useState<string | null>(null);
+    91→  const fileInputRef = useRef<HTMLInputElement>(null);
+    92→
+    93→  const load = useCallback(async () => {
+    94→    setLoading(true);
+    95→    try {
+    96→      const [s, p] = await Promise.all([
+    97→        ayamApi.getCameraSource(),
+    98→        ayamApi.getCameraPresets().catch(() => ({ presets: [] })),
+    99→      ]);
+   100→      setInfo(s);
+   101→      setCustom(s.source === "0" ? "0" : s.source);
+   102→      setPresets(Array.isArray(p.presets) ? p.presets : []);
+   103→    } catch {
+   104→      toast.error(t.gagalSumber);
+   105→    } finally {
+   106→      setLoading(false);
+   107→    }
+   108→  }, [t]);
+   109→
+   110→  useEffect(() => {
+   111→    if (open) load();
+   112→  }, [open, load]);
+   113→
+   114→  const apply = useCallback(
+   115→    async (source: string) => {
+   116→      const val = source.trim();
+   117→      if (!val) return;
+   118→      setApplying(true);
+   119→      try {
+   120→        await ayamApi.setCameraSource(val);
+   121→        toast.success(t.sumberDiterapkan, {
+   122→          description: sourceLabel(val, t),
+   123→        });
+   124→        setOpen(false);
+   125→        onSaved?.();
+   126→      } catch (e) {
+   127→        if (e instanceof PinRequiredError) {
+   128→          toast.info(t.pinDibutuhkan);
+   129→          return;
+   130→        }
+   131→        const msg = e instanceof Error ? e.message : "";
+   132→        toast.error(t.gagalSumber, {
+   133→          description: msg.includes("400")
+   134→            ? (info?.error ?? t.sumberKustom)
+   135→            : undefined,
+   136→        });
+   137→      } finally {
+   138→        setApplying(false);
+   139→      }
+   140→    },
+   141→    [t, onSaved, info]
+   142→  );
+   143→
+   144→  const current = info?.source ?? "";
+   145→
+   146→  // ===== Preset: simpan sumber aktif sebagai preset (upsert by name) =====
+   147→  const savePreset = useCallback(async () => {
+   148→    const name = presetName.trim().slice(0, 40);
+   149→    if (!name) {
+   150→      toast.error(t.presetGagal, { description: t.presetNamaWajib });
+   151→      return;
+   152→    }
+   153→    if (!current) return;
+   154→    setPresetBusy(true);
+   155→    try {
+   156→      const res = await ayamApi.saveCameraPreset(name, current);
+   157→      setPresets(Array.isArray(res.presets) ? res.presets : []);
+   158→      setPresetName("");
+   159→      toast.success(t.presetTersimpan, { description: name });
+   160→    } catch (e) {
+   161→      if (e instanceof PinRequiredError) {
+   162→        toast.info(t.pinDibutuhkan);
+   163→        return;
+   164→      }
+   165→      toast.error(t.presetGagal);
+   166→    } finally {
+   167→      setPresetBusy(false);
+   168→    }
+   169→  }, [presetName, current, t]);
+   170→
+   171→  const removePreset = useCallback(
+   172→    async (name: string) => {
+   173→      setPresetBusy(true);
+   174→      try {
+   175→        const res = await ayamApi.deleteCameraPreset(name);
+   176→        setPresets(Array.isArray(res.presets) ? res.presets : []);
+   177→        setDeletePresetName(null);
+   178→        toast.success(t.presetDihapus, { description: name });
+   179→      } catch (e) {
+   180→        if (e instanceof PinRequiredError) {
+   181→          toast.info(t.pinDibutuhkan);
+   182→          return;
+   183→        }
+   184→        toast.error(t.presetGagalHapus);
+   185→      } finally {
+   186→        setPresetBusy(false);
+   187→      }
+   188→    },
+   189→    [t]
+   190→  );
+   191→
+   192→  const handleDeleteVideo = useCallback(async () => {
+   193→    if (!deleteVideoName) return;
+   194→    setDeleteVideoBusy(true);
+   195→    try {
+   196→      const res = await ayamApi.deleteCameraVideo(deleteVideoName);
+   197→      toast.success(t.videoDihapus, { description: res.deleted });
+   198→      setDeleteVideoName(null);
+   199→      await load();
+   200→    } catch (e) {
+   201→      if (e instanceof PinRequiredError) {
+   202→        toast.info(t.pinDibutuhkan);
+   203→        return;
+   204→      }
+   205→      const msg = e instanceof Error ? e.message : "";
+   206→      toast.error(t.gagalHapusVideo, {
+   207→        description: msg.includes("400") ? t.videoAktifWarning : undefined,
+   208→      });
+   209→    } finally {
+   210→      setDeleteVideoBusy(false);
+   211→    }
+   212→  }, [deleteVideoName, t, load]);
+   213→
+   214→  const handleFile = useCallback(
+   215→    async (file: File | undefined | null) => {
+   216→      if (!file || uploading) return;
+   217→      if (!videoExtOk(file.name)) {
+   218→        toast.error(t.unggahGagal, { description: t.extSalah });
+   219→        return;
+   220→      }
+   221→      if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+   222→        toast.error(t.unggahGagal, { description: t.ukuranMax });
+   223→        return;
+   224→      }
+   225→      setUploading(true);
+   226→      setUploadPct(0);
+   227→      try {
+   228→        const res = await ayamApi.uploadCameraVideo(file, setUploadPct);
+   229→        toast.success(t.unggahBerhasil, {
+   230→          description: `${res.name} · ${res.size_mb} MB`,
+   231→        });
+   232→        await load();
+   233→        onSaved?.();
+   234→      } catch (e) {
+   235→        if (e instanceof PinRequiredError) {
+   236→          toast.info(t.pinDibutuhkan);
+   237→          return;
+   238→        }
+   239→        toast.error(t.unggahGagal, {
+   240→          description: e instanceof Error ? e.message : undefined,
+   241→        });
+   242→      } finally {
+   243→        setUploading(false);
+   244→        setUploadPct(0);
+   245→        if (fileInputRef.current) fileInputRef.current.value = "";
+   246→      }
+   247→    },
+   248→    [uploading, t, load, onSaved]
+   249→  );
+   250→
+   251→  return (
+   252→    <Dialog open={open} onOpenChange={setOpen}>
+   253→      <DialogTrigger asChild>
+   254→        <Button
+   255→          variant="outline"
+   256→          size="sm"
+   257→          aria-label={t.gantiSumber}
+   258→          title={t.gantiSumber}
+   259→          className="h-8 gap-1.5 border-zinc-800 bg-zinc-900 px-2.5 text-xs text-zinc-400 hover:border-amber-500/50 hover:bg-zinc-800 hover:text-amber-400"
+   260→        >
+   261→          <Video className="h-3.5 w-3.5" />
+   262→          <span className="hidden sm:inline">{t.gantiSumber}</span>
+   263→        </Button>
+   264→      </DialogTrigger>
+   265→      <DialogContent className="border-zinc-800 bg-zinc-950 text-zinc-100 sm:max-w-md">
+   266→        <DialogHeader>
+   267→          <DialogTitle className="flex items-center gap-2">
+   268→            <Video className="h-4 w-4 text-amber-400" />
+   269→            {t.sumberKameraSetting}
+   270→          </DialogTitle>
+   271→          <DialogDescription>{t.sumberKameraDesc}</DialogDescription>
+   272→        </DialogHeader>
+   273→
+   274→        {loading ? (
+   275→          <div className="flex items-center justify-center py-10">
+   276→            <Loader2 className="h-6 w-6 animate-spin text-amber-400" />
+   277→          </div>
+   278→        ) : (
+   279→          <div className="space-y-5 py-2">
+   280→            {/* Current source */}
+   281→            <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-3">
+   282→              <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+   283→                {t.sumberSaatIni}
+   284→              </p>
+   285→              <p className="mt-1 truncate font-mono text-xs text-zinc-200" title={current}>
+   286→                {current ? sourceLabel(current, t) : "—"}
+   287→              </p>
+   288→              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+   289→                <Badge
+   290→                  variant="outline"
+   291→                  className={`px-1.5 py-0 text-[10px] font-semibold ${
+   292→                    info?.connected
+   293→                      ? "border-emerald-900 bg-emerald-950 text-emerald-400"
+   294→                      : "border-red-900 bg-red-950 text-red-400"
+   295→                  }`}
+   296→                >
+   297→                  {info?.connected ? "✓ connected" : "disconnected"}
+   298→                </Badge>
+   299→                <Badge
+   300→                  variant="outline"
+   301→                  className="border-zinc-800 px-1.5 py-0 text-[10px] text-zinc-400"
+   302→                >
+   303→                  {current === "0"
+   304→                    ? t.webcam
+   305→                    : info?.is_stream
+   306→                      ? t.stream
+   307→                      : t.videoLokal}
+   308→                </Badge>
+   309→                {info?.resolution ? (
+   310→                  <Badge
+   311→                    variant="outline"
+   312→                    className="border-zinc-800 px-1.5 py-0 text-[10px] text-zinc-400"
+   313→                  >
+   314→                    {info.resolution} · {info.fps} fps
+   315→                  </Badge>
+   316→                ) : null}
+   317→              </div>
+   318→              {info?.error ? (
+   319→                <p className="mt-2 flex items-start gap-1.5 rounded-md border border-red-500/30 bg-red-500/10 p-2 text-[11px] text-red-300">
+   320→                  <RadioTower className="mt-0.5 h-3 w-3 shrink-0" />
+   321→                  {info.error}
+   322→                </p>
+   323→              ) : null}
+   324→            </div>
+   325→
+   326→            {/* Preset kamera (ronde 7) */}
+   327→            <div className="space-y-2">
+   328→              <div className="flex items-center justify-between gap-2">
+   329→                <p className="text-xs font-medium text-zinc-400">{t.presetKamera}</p>
+   330→                <p className="truncate text-[10px] text-zinc-600">{t.presetKameraDesc}</p>
+   331→              </div>
+   332→              {presets.length > 0 ? (
+   333→                <div className="ayam-scroll max-h-36 space-y-1.5 overflow-y-auto pr-1">
+   334→                  {presets.map((p) => {
+   335→                    const active = p.source === current;
+   336→                    return (
+   337→                      <div
+   338→                        key={p.name}
+   339→                        role="button"
+   340→                        tabIndex={0}
+   341→                        aria-label={`${t.presetTerapkan}: ${p.name}`}
+   342→                        onClick={() => !presetBusy && apply(p.source)}
+   343→                        onKeyDown={(e) => {
+   344→                          if (e.key === "Enter" && !presetBusy) {
+   345→                            e.preventDefault();
+   346→                            apply(p.source);
+   347→                          }
+   348→                        }}
+   349→                        title={p.source}
+   350→                        className={`flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border p-2.5 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
+   351→                          active
+   352→                            ? "border-sky-500/40 bg-sky-500/10 text-sky-300"
+   353→                            : "border-zinc-800 bg-zinc-900/60 text-zinc-300 hover:border-sky-500/40 hover:bg-zinc-900"
+   354→                        }`}
+   355→                      >
+   356→                        <span className="flex min-w-0 items-center gap-2">
+   357→                          <RadioTower className="h-3.5 w-3.5 shrink-0 text-sky-400/80" />
+   358→                          <span className="min-w-0">
+   359→                            <span className="block truncate font-semibold">{p.name}</span>
+   360→                            <span className="block truncate font-mono text-[10px] text-zinc-500">
+   361→                              {p.source.startsWith("rtsp") ? "RTSP" : p.source === "0" ? t.webcam : p.source.split("/").pop()}
+   362→                            </span>
+   363→                          </span>
+   364→                        </span>
+   365→                        <span className="flex shrink-0 items-center gap-1.5">
+   366→                          {active ? <Check className="h-3.5 w-3.5 text-sky-400" /> : null}
+   367→                          <button
+   368→                            type="button"
+   369→                            aria-label={`${t.hapus}: ${p.name}`}
+   370→                            title={`${t.hapus}: ${p.name}`}
+   371→                            disabled={presetBusy}
+   372→                            onClick={(e) => {
+   373→                              e.stopPropagation();
+   374→                              setDeletePresetName(p.name);
+   375→                            }}
+   376→                            className="rounded-md p-1 text-zinc-600 transition-colors hover:bg-red-950/60 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-30"
+   377→                          >
+   378→                            <Trash2 className="h-3.5 w-3.5" />
+   379→                          </button>
+   380→                        </span>
+   381→                      </div>
+   382→                    );
+   383→                  })}
+   384→                </div>
+   385→              ) : (
+   386→                <p className="rounded-lg border border-dashed border-zinc-800 px-3 py-2 text-center text-[11px] text-zinc-600">
+   387→                  {t.presetKosong}
+   388→                </p>
+   389→              )}
+   390→              {/* Simpan sumber aktif sebagai preset */}
+   391→              <div className="flex gap-2">
+   392→                <Input
+   393→                  id="preset-name"
+   394→                  value={presetName}
+   395→                  onChange={(e) => setPresetName(e.target.value)}
+   396→                  placeholder={t.presetNamaPh}
+   397→                  maxLength={40}
+   398→                  aria-label={t.presetNamaPh}
+   399→                  className="h-9 flex-1 border-zinc-800 bg-zinc-950 text-xs text-zinc-100 placeholder:text-zinc-600 focus-visible:ring-sky-500"
+   400→                  onKeyDown={(e) => {
+   401→                    if (e.key === "Enter" && !presetBusy) void savePreset();
+   402→                  }}
+   403→                />
+   404→                <Button
+   405→                  onClick={() => void savePreset()}
+   406→                  disabled={presetBusy || !presetName.trim() || !current}
+   407→                  title={`${t.presetSimpanDariAktif}: ${current}`}
+   408→                  className="h-9 shrink-0 gap-1.5 bg-sky-600 px-3 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
+   409→                >
+   410→                  {presetBusy ? (
+   411→                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+   412→                  ) : (
+   413→                    <BookmarkPlus className="h-3.5 w-3.5" />
+   414→                  )}
+   415→                  {t.presetSimpan}
+   416→                </Button>
+   417→              </div>
+   418→            </div>
+   419→
+   420→            {/* Upload zone */}
+   421→            <div className="space-y-2">
+   422→              <p className="text-xs font-medium text-zinc-400">{t.unggahVideo}</p>
+   423→              <div
+   424→                role="button"
+   425→                tabIndex={0}
+   426→                aria-label={t.unggahVideo}
+   427→                onClick={() => !uploading && fileInputRef.current?.click()}
+   428→                onKeyDown={(e) => {
+   429→                  if ((e.key === "Enter" || e.key === " ") && !uploading) {
+   430→                    e.preventDefault();
+   431→                    fileInputRef.current?.click();
+   432→                  }
+   433→                }}
+   434→                onDragOver={(e) => {
+   435→                  e.preventDefault();
+   436→                  if (!uploading) setDragOver(true);
+   437→                }}
+   438→                onDragLeave={() => setDragOver(false)}
+   439→                onDrop={(e) => {
+   440→                  e.preventDefault();
+   441→                  setDragOver(false);
+   442→                  void handleFile(e.dataTransfer.files?.[0]);
+   443→                }}
+   444→                className={`group relative flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed p-5 text-center transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
+   445→                  dragOver
+   446→                    ? "border-amber-400 bg-amber-500/10"
+   447→                    : "border-zinc-700 bg-zinc-900/40 hover:border-amber-500/50 hover:bg-zinc-900"
+   448→                } ${uploading ? "pointer-events-none opacity-70" : ""}`}
+   449→              >
+   450→                {uploading ? (
+   451→                  <>
+   452→                    <CloudUpload className="h-6 w-6 animate-pulse text-amber-400" />
+   453→                    <p className="text-xs font-semibold text-amber-300">
+   454→                      {t.mengunggah}… {uploadPct}%
+   455→                    </p>
+   456→                    <div
+   457→                      className="mt-1 h-1.5 w-full max-w-56 overflow-hidden rounded-full bg-zinc-800"
+   458→                      role="progressbar"
+   459→                      aria-valuenow={uploadPct}
+   460→                      aria-valuemin={0}
+   461→                      aria-valuemax={100}
+   462→                    >
+   463→                      <div
+   464→                        className="h-full rounded-full bg-gradient-to-r from-amber-600 to-amber-400 transition-all duration-200"
+   465→                        style={{ width: `${uploadPct}%` }}
+   466→                      />
+   467→                    </div>
+   468→                  </>
+   469→                ) : (
+   470→                  <>
+   471→                    <CloudUpload className="h-6 w-6 text-zinc-500 transition-colors group-hover:text-amber-400" />
+   472→                    <p className="text-xs font-medium text-zinc-300">{t.jatuhkanVideo}</p>
+   473→                    <p className="text-[11px] text-zinc-500">
+   474→                      {t.atauPilih} · {t.extDiizinkan}
+   475→                    </p>
+   476→                  </>
+   477→                )}
+   478→                <input
+   479→                  ref={fileInputRef}
+   480→                  type="file"
+   481→                  className="sr-only"
+   482→                  accept="video/mp4,video/x-msvideo,video/quicktime,video/x-matroska,.mp4,.avi,.mov,.mkv"
+   483→                  onChange={(e) => void handleFile(e.target.files?.[0])}
+   484→                />
+   485→              </div>
+   486→            </div>
+   487→
+   488→            {/* Demo videos */}
+   489→            {info && info.videos.length > 0 ? (
+   490→              <div className="space-y-2">
+   491→                <p className="text-xs font-medium text-zinc-400">{t.pilihVideoDemo}</p>
+   492→                <div className="ayam-scroll max-h-40 space-y-1.5 overflow-y-auto pr-1">
+   493→                  {info.videos.map((v) => {
+   494→                    const active = v.path === current;
+   495→                    const isUpload = v.name.startsWith("upload_");
+   496→                    return (
+   497→                      <div
+   498→                        key={v.path}
+   499→                        role="button"
+   500→                        tabIndex={0}
+   501→                        onClick={() => !deleteVideoBusy && apply(v.path)}
+   502→                        onKeyDown={(e) => {
+   503→                          if (e.key === "Enter" && !deleteVideoBusy) {
+   504→                            e.preventDefault();
+   505→                            apply(v.path);
+   506→                          }
+   507→                        }}
+   508→                        title={v.path}
+   509→                        className={`flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border p-2.5 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
+   510→                          active
+   511→                            ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
+   512→                            : "border-zinc-800 bg-zinc-900/60 text-zinc-300 hover:border-amber-500/40 hover:bg-zinc-900"
+   513→                        }`}
+   514→                      >
+   515→                        <span className="flex min-w-0 items-center gap-2">
+   516→                          {v.path === "0" ? (
+   517→                            <Webcam className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+   518→                          ) : (
+   519→                            <Video className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+   520→                          )}
+   521→                          <span className="truncate font-medium">{v.name}</span>
+   522→                          {isUpload ? (
+   523→                            <Badge
+   524→                              variant="outline"
+   525→                              className="shrink-0 border-violet-900 bg-violet-950/60 px-1.5 py-0 text-[9px] font-semibold uppercase text-violet-400"
+   526→                            >
+   527→                              {t.videoUnggahan}
+   528→                            </Badge>
+   529→                          ) : null}
+   530→                        </span>
+   531→                        <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-zinc-500">
+   532→                          {v.size_mb > 0 ? `${v.size_mb} MB` : ""}
+   533→                          {isUpload ? (
+   534→                            <button
+   535→                              type="button"
+   536→                              aria-label={`${t.hapusVideo}: ${v.name}`}
+   537→                              title={t.hapusVideo}
+   538→                              disabled={deleteVideoBusy || active}
+   539→                              onClick={(e) => {
+   540→                                e.stopPropagation();
+   541→                                setDeleteVideoName(v.name);
+   542→                              }}
+   543→                              className="rounded-md p-1 text-zinc-600 transition-colors hover:bg-red-950/60 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-30"
+   544→                            >
+   545→                              <Trash2 className="h-3.5 w-3.5" />
+   546→                            </button>
+   547→                          ) : null}
+   548→                          {active ? <Check className="h-3.5 w-3.5 text-amber-400" /> : null}
+   549→                        </span>
+   550→                      </div>
+   551→                    );
+   552→                  })}
+   553→                </div>
+   554→              </div>
+   555→            ) : null}
+   556→
+   557→            {/* Custom source */}
+   558→            <div className="space-y-1.5">
+   559→              <label
+   560→                htmlFor="cam-source"
+   561→                className="text-xs font-medium text-zinc-400"
+   562→              >
+   563→                {t.sumberKustom}
+   564→              </label>
+   565→              <div className="flex gap-2">
+   566→                <Input
+   567→                  id="cam-source"
+   568→                  value={custom}
+   569→                  onChange={(e) => setCustom(e.target.value)}
+   570→                  placeholder={t.sumberKustomPh}
+   571→                  spellCheck={false}
+   572→                  className="flex-1 border-zinc-800 bg-zinc-950 font-mono text-xs text-zinc-100 placeholder:text-zinc-600 focus-visible:ring-amber-500"
+   573→                  onKeyDown={(e) => {
+   574→                    if (e.key === "Enter" && !applying) apply(custom);
+   575→                  }}
+   576→                />
+   577→                <Button
+   578→                  onClick={() => apply(custom)}
+   579→                  disabled={applying || !custom.trim()}
+   580→                  className="h-9 shrink-0 bg-amber-500 px-3 font-semibold text-zinc-950 hover:bg-amber-400 disabled:opacity-50"
+   581→                >
+   582→                  {applying ? (
+   583→                    <>
+   584→                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+   585→                      {t.menerapkanSumber}
+   586→                    </>
+   587→                  ) : (
+   588→                    t.terapkanSumber
+   589→                  )}
+   590→                </Button>
+   591→              </div>
+   592→              <p className="text-[11px] leading-relaxed text-zinc-500">
+   593→                {t.sumberKameraDesc}
+   594→              </p>
+   595→            </div>
+   596→          </div>
+   597→        )}
+   598→
+   599→        {/* Konfirmasi hapus preset */}
+   600→        <AlertDialog
+   601→          open={deletePresetName !== null}
+   602→          onOpenChange={(o) => !o && setDeletePresetName(null)}
+   603→        >
+   604→          <AlertDialogContent className="border-zinc-800 bg-zinc-950 text-zinc-100">
+   605→            <AlertDialogHeader>
+   606→              <AlertDialogTitle className="flex items-center gap-2">
+   607→                <Trash2 className="h-4 w-4 text-red-500" />
+   608→                {t.presetHapusKonfirmasi}
+   609→              </AlertDialogTitle>
+   610→              <AlertDialogDescription>
+   611→                <span className="block font-mono text-xs text-sky-300/90">{deletePresetName}</span>
+   612→                {t.presetHapusDesc}
+   613→              </AlertDialogDescription>
+   614→            </AlertDialogHeader>
+   615→            <AlertDialogFooter>
+   616→              <AlertDialogCancel
+   617→                disabled={presetBusy}
+   618→                className="border-zinc-800 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+   619→              >
+   620→                {t.batalkan}
+   621→              </AlertDialogCancel>
+   622→              <AlertDialogAction
+   623→                disabled={presetBusy}
+   624→                onClick={(e) => {
+   625→                  e.preventDefault();
+   626→                  if (deletePresetName) void removePreset(deletePresetName);
+   627→                }}
+   628→                className="bg-red-600 font-semibold text-white hover:bg-red-700"
+   629→              >
+   630→                {presetBusy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+   631→                {presetBusy ? t.menghapus : t.yaHapus}
+   632→              </AlertDialogAction>
+   633→            </AlertDialogFooter>
+   634→          </AlertDialogContent>
+   635→        </AlertDialog>
+   636→
+   637→        {/* Konfirmasi hapus video unggahan */}
+   638→        <AlertDialog
+   639→          open={deleteVideoName !== null}
+   640→          onOpenChange={(o) => !o && setDeleteVideoName(null)}
+   641→        >
+   642→          <AlertDialogContent className="border-zinc-800 bg-zinc-950 text-zinc-100">
+   643→            <AlertDialogHeader>
+   644→              <AlertDialogTitle className="flex items-center gap-2">
+   645→                <Trash2 className="h-4 w-4 text-red-500" />
+   646→                {t.hapusVideoKonfirmasi}
+   647→              </AlertDialogTitle>
+   648→              <AlertDialogDescription>
+   649→                <span className="block font-mono text-xs text-amber-300/90">
+   650→                  {deleteVideoName}
+   651→                </span>
+   652→                {t.hapusVideoDesc}
+   653→              </AlertDialogDescription>
+   654→            </AlertDialogHeader>
+   655→            <AlertDialogFooter>
+   656→              <AlertDialogCancel
+   657→                disabled={deleteVideoBusy}
+   658→                className="border-zinc-800 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+   659→              >
+   660→                {t.batalkan}
+   661→              </AlertDialogCancel>
+   662→              <AlertDialogAction
+   663→                disabled={deleteVideoBusy}
+   664→                onClick={(e) => {
+   665→                  e.preventDefault();
+   666→                  void handleDeleteVideo();
+   667→                }}
+   668→                className="bg-red-600 font-semibold text-white hover:bg-red-700"
+   669→              >
+   670→                {deleteVideoBusy ? (
+   671→                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+   672→                ) : null}
+   673→                {deleteVideoBusy ? t.menghapus : t.yaHapus}
+   674→              </AlertDialogAction>
+   675→            </AlertDialogFooter>
+   676→          </AlertDialogContent>
+   677→        </AlertDialog>
+   678→      </DialogContent>
+   679→    </Dialog>
+   680→  );
+   681→}
+   682→
