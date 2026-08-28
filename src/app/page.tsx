@@ -86,10 +86,12 @@ import { ThemeToggle } from "@/components/ayam/theme-toggle";
 import { AnimatedNumber } from "@/components/ayam/animated-number";
 import { PinGateDialog, PinManagerDialog } from "@/components/ayam/pin-dialog";
 import { RangeReportDialog } from "@/components/ayam/range-report-dialog";
+import { AuditLogDialog } from "@/components/ayam/audit-log-dialog";
 import {
   ayamApi,
   PinRequiredError,
   type HistoryItem,
+  type LastSession,
 } from "@/lib/ayam/api";
 import { dict, type Lang } from "@/lib/ayam/i18n";
 
@@ -119,6 +121,7 @@ function StatCard({
   sub,
   accent,
   glow,
+  accentLine,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
@@ -126,11 +129,18 @@ function StatCard({
   sub?: React.ReactNode;
   accent: string;
   glow: string;
+  /** Gradasi garis aksen tipis di tepi atas kartu (per warna) */
+  accentLine: string;
 }) {
   return (
     <Card
       className={`group relative overflow-hidden border-zinc-800 bg-zinc-900/60 transition-all duration-300 hover:-translate-y-0.5 hover:border-zinc-700 ${glow}`}
     >
+      {/* garis aksen warna per kartu (ronde 7) */}
+      <div
+        aria-hidden
+        className={`pointer-events-none absolute inset-x-0 top-0 h-[2px] opacity-70 transition-opacity duration-300 group-hover:opacity-100 ${accentLine}`}
+      />
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-zinc-600 to-transparent" />
       <CardContent className="p-4 sm:p-5">
         <div className="flex items-start justify-between gap-2">
@@ -362,6 +372,10 @@ export default function AyamCounterPage() {
 
   const sessionActive = stats.session_active || stats.is_processing === true;
   const canStart = asalAyam.trim().length > 0;
+
+  // Ringkasan sesi terakhir (ronde 7): tampil saat idle setelah stop —
+  // backend kini auto-reset count ke 0 begitu sesi disimpan.
+  const lastSession: LastSession | null = stats.last_session ?? null;
 
   // ----- durasi sesi berjalan (dari timeline backend, detik) -----
   const elapsedSec = useMemo(() => {
@@ -705,6 +719,7 @@ export default function AyamCounterPage() {
             <ConnBadge mode={connMode} t={t} />
             <SettingsDialog t={t} onSaved={refreshDevice} />
             <PinManagerDialog t={t} />
+            <AuditLogDialog t={t} lang={lang} />
             <Button
               variant="outline"
               size="icon"
@@ -774,6 +789,17 @@ export default function AyamCounterPage() {
                 <span className="inline-flex items-center gap-1.5 font-medium text-emerald-400">
                   <LiveDot active /> {t.aktifBerjalan}
                 </span>
+              ) : lastSession ? (
+                <span
+                  className="inline-flex max-w-full items-center gap-1.5 truncate text-amber-400/90"
+                  title={`${lastSession.asal_ayam} · ${lastSession.total} ${t.totalAyam.toLowerCase()} · ${fmtDur(lastSession.durasi_detik)}`}
+                >
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+                  <span className="truncate">
+                    {t.sesiTerakhir}: {lastSession.asal_ayam} · {lastSession.total} {" "}
+                    {(lang === "id" ? "ayam" : "chickens")} · {fmtDur(lastSession.durasi_detik)}
+                  </span>
+                </span>
               ) : (
                 <span className="inline-flex items-center gap-1.5 text-zinc-500">
                   <LiveDot active={false} /> {t.menungguSesi}
@@ -782,6 +808,7 @@ export default function AyamCounterPage() {
             }
             accent="bg-amber-500/15 text-amber-400"
             glow="hover:shadow-[0_8px_32px_-12px_rgba(245,158,11,0.35)]"
+            accentLine="bg-gradient-to-r from-transparent via-amber-500/80 to-transparent"
           />
           <StatCard
             icon={ScanEye}
@@ -794,6 +821,7 @@ export default function AyamCounterPage() {
             }
             accent="bg-emerald-500/15 text-emerald-400"
             glow="hover:shadow-[0_8px_32px_-12px_rgba(16,185,129,0.35)]"
+            accentLine="bg-gradient-to-r from-transparent via-emerald-500/80 to-transparent"
           />
           <StatCard
             icon={Gauge}
@@ -812,6 +840,7 @@ export default function AyamCounterPage() {
             }
             accent="bg-sky-500/15 text-sky-400"
             glow="hover:shadow-[0_8px_32px_-12px_rgba(14,165,233,0.35)]"
+            accentLine="bg-gradient-to-r from-transparent via-sky-500/80 to-transparent"
           />
           <StatCard
             icon={Cpu}
@@ -838,6 +867,7 @@ export default function AyamCounterPage() {
             }
             accent="bg-violet-500/15 text-violet-400"
             glow="hover:shadow-[0_8px_32px_-12px_rgba(139,92,246,0.35)]"
+            accentLine="bg-gradient-to-r from-transparent via-violet-500/80 to-transparent"
           />
         </motion.section>
 

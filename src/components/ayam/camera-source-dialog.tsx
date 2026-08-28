@@ -8,7 +8,16 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, CloudUpload, Loader2, RadioTower, Trash2, Video, Webcam } from "lucide-react";
+import {
+  BookmarkPlus,
+  Check,
+  CloudUpload,
+  Loader2,
+  RadioTower,
+  Trash2,
+  Video,
+  Webcam,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -33,7 +42,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { ayamApi, PinRequiredError, type CameraSourceInfo } from "@/lib/ayam/api";
+import {
+  ayamApi,
+  PinRequiredError,
+  type CameraPreset,
+  type CameraSourceInfo,
+} from "@/lib/ayam/api";
 import type { Dict } from "@/lib/ayam/i18n";
 
 interface CameraSourceDialogProps {
@@ -69,14 +83,23 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
   const [dragOver, setDragOver] = useState(false);
   const [deleteVideoName, setDeleteVideoName] = useState<string | null>(null);
   const [deleteVideoBusy, setDeleteVideoBusy] = useState(false);
+  // ===== Preset kamera (ronde 7) =====
+  const [presets, setPresets] = useState<CameraPreset[]>([]);
+  const [presetName, setPresetName] = useState("");
+  const [presetBusy, setPresetBusy] = useState(false);
+  const [deletePresetName, setDeletePresetName] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const s = await ayamApi.getCameraSource();
+      const [s, p] = await Promise.all([
+        ayamApi.getCameraSource(),
+        ayamApi.getCameraPresets().catch(() => ({ presets: [] })),
+      ]);
       setInfo(s);
       setCustom(s.source === "0" ? "0" : s.source);
+      setPresets(Array.isArray(p.presets) ? p.presets : []);
     } catch {
       toast.error(t.gagalSumber);
     } finally {
@@ -119,6 +142,52 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
   );
 
   const current = info?.source ?? "";
+
+  // ===== Preset: simpan sumber aktif sebagai preset (upsert by name) =====
+  const savePreset = useCallback(async () => {
+    const name = presetName.trim().slice(0, 40);
+    if (!name) {
+      toast.error(t.presetGagal, { description: t.presetNamaWajib });
+      return;
+    }
+    if (!current) return;
+    setPresetBusy(true);
+    try {
+      const res = await ayamApi.saveCameraPreset(name, current);
+      setPresets(Array.isArray(res.presets) ? res.presets : []);
+      setPresetName("");
+      toast.success(t.presetTersimpan, { description: name });
+    } catch (e) {
+      if (e instanceof PinRequiredError) {
+        toast.info(t.pinDibutuhkan);
+        return;
+      }
+      toast.error(t.presetGagal);
+    } finally {
+      setPresetBusy(false);
+    }
+  }, [presetName, current, t]);
+
+  const removePreset = useCallback(
+    async (name: string) => {
+      setPresetBusy(true);
+      try {
+        const res = await ayamApi.deleteCameraPreset(name);
+        setPresets(Array.isArray(res.presets) ? res.presets : []);
+        setDeletePresetName(null);
+        toast.success(t.presetDihapus, { description: name });
+      } catch (e) {
+        if (e instanceof PinRequiredError) {
+          toast.info(t.pinDibutuhkan);
+          return;
+        }
+        toast.error(t.presetGagalHapus);
+      } finally {
+        setPresetBusy(false);
+      }
+    },
+    [t]
+  );
 
   const handleDeleteVideo = useCallback(async () => {
     if (!deleteVideoName) return;
@@ -252,6 +321,100 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
                   {info.error}
                 </p>
               ) : null}
+            </div>
+
+            {/* Preset kamera (ronde 7) */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-medium text-zinc-400">{t.presetKamera}</p>
+                <p className="truncate text-[10px] text-zinc-600">{t.presetKameraDesc}</p>
+              </div>
+              {presets.length > 0 ? (
+                <div className="ayam-scroll max-h-36 space-y-1.5 overflow-y-auto pr-1">
+                  {presets.map((p) => {
+                    const active = p.source === current;
+                    return (
+                      <div
+                        key={p.name}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`${t.presetTerapkan}: ${p.name}`}
+                        onClick={() => !presetBusy && apply(p.source)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !presetBusy) {
+                            e.preventDefault();
+                            apply(p.source);
+                          }
+                        }}
+                        title={p.source}
+                        className={`flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border p-2.5 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
+                          active
+                            ? "border-sky-500/40 bg-sky-500/10 text-sky-300"
+                            : "border-zinc-800 bg-zinc-900/60 text-zinc-300 hover:border-sky-500/40 hover:bg-zinc-900"
+                        }`}
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
+                          <RadioTower className="h-3.5 w-3.5 shrink-0 text-sky-400/80" />
+                          <span className="min-w-0">
+                            <span className="block truncate font-semibold">{p.name}</span>
+                            <span className="block truncate font-mono text-[10px] text-zinc-500">
+                              {p.source.startsWith("rtsp") ? "RTSP" : p.source === "0" ? t.webcam : p.source.split("/").pop()}
+                            </span>
+                          </span>
+                        </span>
+                        <span className="flex shrink-0 items-center gap-1.5">
+                          {active ? <Check className="h-3.5 w-3.5 text-sky-400" /> : null}
+                          <button
+                            type="button"
+                            aria-label={`${t.hapus}: ${p.name}`}
+                            title={`${t.hapus}: ${p.name}`}
+                            disabled={presetBusy}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeletePresetName(p.name);
+                            }}
+                            className="rounded-md p-1 text-zinc-600 transition-colors hover:bg-red-950/60 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-30"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="rounded-lg border border-dashed border-zinc-800 px-3 py-2 text-center text-[11px] text-zinc-600">
+                  {t.presetKosong}
+                </p>
+              )}
+              {/* Simpan sumber aktif sebagai preset */}
+              <div className="flex gap-2">
+                <Input
+                  id="preset-name"
+                  value={presetName}
+                  onChange={(e) => setPresetName(e.target.value)}
+                  placeholder={t.presetNamaPh}
+                  maxLength={40}
+                  aria-label={t.presetNamaPh}
+                  className="h-9 flex-1 border-zinc-800 bg-zinc-950 text-xs text-zinc-100 placeholder:text-zinc-600 focus-visible:ring-sky-500"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !presetBusy) void savePreset();
+                  }}
+                />
+                <Button
+                  onClick={() => void savePreset()}
+                  disabled={presetBusy || !presetName.trim() || !current}
+                  title={`${t.presetSimpanDariAktif}: ${current}`}
+                  className="h-9 shrink-0 gap-1.5 bg-sky-600 px-3 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
+                >
+                  {presetBusy ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <BookmarkPlus className="h-3.5 w-3.5" />
+                  )}
+                  {t.presetSimpan}
+                </Button>
+              </div>
             </div>
 
             {/* Upload zone */}
@@ -432,6 +595,44 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
             </div>
           </div>
         )}
+
+        {/* Konfirmasi hapus preset */}
+        <AlertDialog
+          open={deletePresetName !== null}
+          onOpenChange={(o) => !o && setDeletePresetName(null)}
+        >
+          <AlertDialogContent className="border-zinc-800 bg-zinc-950 text-zinc-100">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <Trash2 className="h-4 w-4 text-red-500" />
+                {t.presetHapusKonfirmasi}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                <span className="block font-mono text-xs text-sky-300/90">{deletePresetName}</span>
+                {t.presetHapusDesc}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel
+                disabled={presetBusy}
+                className="border-zinc-800 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+              >
+                {t.batalkan}
+              </AlertDialogCancel>
+              <AlertDialogAction
+                disabled={presetBusy}
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (deletePresetName) void removePreset(deletePresetName);
+                }}
+                className="bg-red-600 font-semibold text-white hover:bg-red-700"
+              >
+                {presetBusy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+                {presetBusy ? t.menghapus : t.yaHapus}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Konfirmasi hapus video unggahan */}
         <AlertDialog

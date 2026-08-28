@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
+  Hourglass,
   KeyRound,
   Loader2,
   ShieldCheck,
@@ -41,6 +42,7 @@ import {
   getStoredPin,
   setStoredPin,
   clearStoredPin,
+  PinRateLimitedError,
   type PinStatus,
 } from "@/lib/ayam/api";
 import type { Dict } from "@/lib/ayam/i18n";
@@ -63,6 +65,8 @@ export function PinGateDialog({
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
+  // Rate-limit: hitung mundur detik kunci dari backend (429 too_many_attempts)
+  const [lockSecs, setLockSecs] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Reset tiap kali dialog dibuka
@@ -70,13 +74,23 @@ export function PinGateDialog({
     if (open) {
       setPin("");
       setError(false);
+      setLockSecs(0);
       const id = setTimeout(() => inputRef.current?.focus(), 80);
       return () => clearTimeout(id);
     }
   }, [open]);
 
+  // Hitung mundur kunci rate-limit
+  useEffect(() => {
+    if (lockSecs <= 0) return;
+    const id = setInterval(() => {
+      setLockSecs((s) => (s <= 1 ? 0 : s - 1));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [lockSecs]);
+
   const submit = useCallback(async () => {
-    if (!pin.trim() || busy) return;
+    if (!pin.trim() || busy || lockSecs > 0) return;
     setBusy(true);
     setError(false);
     try {
@@ -87,7 +101,13 @@ export function PinGateDialog({
       // oleh onOpenChange(false) di parent), baru tutup dialog.
       onSuccess();
       onOpenChange(false);
-    } catch {
+    } catch (e) {
+      if (e instanceof PinRateLimitedError) {
+        setLockSecs(e.retryAfter);
+        setPin("");
+        toast.error(`${t.pinTerkunci} ${e.retryAfter} ${t.pinDetik}`);
+        return;
+      }
       setError(true);
       setPin("");
       toast.error(t.pinSalah);
@@ -95,7 +115,7 @@ export function PinGateDialog({
     } finally {
       setBusy(false);
     }
-  }, [pin, busy, t, onOpenChange, onSuccess]);
+  }, [pin, busy, lockSecs, t, onOpenChange, onSuccess]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -135,13 +155,25 @@ export function PinGateDialog({
             onKeyDown={(e) => {
               if (e.key === "Enter") void submit();
             }}
+            disabled={lockSecs > 0}
             aria-invalid={error}
+            aria-disabled={lockSecs > 0}
             placeholder="••••"
-            className={`border-zinc-800 bg-zinc-900 text-center font-mono text-xl tracking-[0.5em] text-zinc-100 placeholder:text-zinc-700 focus-visible:ring-amber-500 ${
+            className={`border-zinc-800 bg-zinc-900 text-center font-mono text-xl tracking-[0.5em] text-zinc-100 placeholder:text-zinc-700 focus-visible:ring-amber-500 disabled:cursor-not-allowed disabled:opacity-50 ${
               error ? "border-red-500/60" : ""
             }`}
           />
-          {error ? (
+          {lockSecs > 0 ? (
+            <motion.p
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              role="alert"
+              className="flex items-center gap-1.5 rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-[11px] font-medium text-red-400"
+            >
+              <Hourglass className="h-3 w-3 animate-pulse" />
+              {t.pinTerkunci} {lockSecs} {t.pinDetik}
+            </motion.p>
+          ) : error ? (
             <p className="flex items-center gap-1 text-[11px] text-red-400">
               <TriangleAlert className="h-3 w-3" /> {t.pinSalah}
             </p>
@@ -158,13 +190,18 @@ export function PinGateDialog({
           </Button>
           <Button
             onClick={() => void submit()}
-            disabled={busy || pin.length < 4}
+            disabled={busy || pin.length < 4 || lockSecs > 0}
             className="bg-amber-500 font-semibold text-zinc-950 hover:bg-amber-400 disabled:opacity-50"
           >
             {busy ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 {t.pinMembuka}
+              </>
+            ) : lockSecs > 0 ? (
+              <>
+                <Hourglass className="mr-2 h-4 w-4 animate-pulse" />
+                {lockSecs}s
               </>
             ) : (
               <>

@@ -306,3 +306,64 @@ Rekomendasi ronde berikutnya (prioritas):
 3. Audit log aksi terproteksi (siapa kapan start/stop/hapus, simpan ke tabel baru).
 4. Halaman pengaturan kamera RTSP profile tersimpan (multi-kamera preset).
 5. Uji upload video besar (100-300 MB) via preview gateway + indikator "menyiapkan video" saat capture switch.
+
+---
+Task ID: 7-a
+Agent: Z.ai Code (backend subagent)
+Date: 2026-08-28
+Task: Backend ronde 7 — audit log, PIN rate-limit, auto-reset counter setelah stop + last_session, camera presets.
+
+Work Log:
+- Baca worklog ronde 5-6 + app.py (1614 baris) / database.py / config.py / .env / start.sh. Backend lama (PID 18552) di-stop, kode diedit, restart via start.sh (nohup, PID baru 24987), py_compile OK, semua verifikasi via curl :5000.
+- database.py: tabel baru audit_log (id, ts, action, detail) dibuat di init_db(); metode log_action (insert + ts ISO, try/except/finally — logging tak pernah mengganggu alur utama), get_audit_log(limit) (id DESC), clear_audit_log() (return jumlah baris dihapus).
+- app.py TASK 1 AUDIT LOG: helper _audit(action, detail) (try/except senyap, detail dipotong 300 char). Audit ditambahkan SETELAH guard sukses di: session_start (asal), session_stop (total=N, di-capture SEBELUM _do_stop_session reset), reset, count_adjust ("+1 → N"), history_delete (#id), settings (json applied), camera_source (basename file / src[:80] utk stream), camera_upload (basename dest), camera_video_delete (name), pin_update (enabled + pin_changed), preset_save/preset_delete, pin_verify_fail, pin_locked_out (retry_after=N), pin_verify_ok, audit_clear. Endpoint baru: GET /api/audit?limit=100 (clamp 1..500, tanpa PIN) & DELETE /api/audit (PIN, return {"status":"ok","deleted":N}).
+- app.py TASK 2 RATE LIMIT: _pin_fail_lock (threading.Lock) + _pin_fails {count, locked_until} + _pin_lockout_secs (3→5s, 5→20s, 8+→60s). POST /api/pin/verify: cek lockout dulu → 429 {"error":"too_many_attempts","retry_after":N} + audit pin_locked_out; PIN benar → reset fails + audit pin_verify_ok; salah → attempts++ , lockout progresif, 401 {"valid":false,"attempts":N,"locked_for":5|20|60|null} + audit pin_verify_fail. POST /api/pin: lockout check sama (429 dgn retry_after), current_pin salah → 403 + attempts++ (ikut rate-limit), kredensial benar → reset fails. _pin_guard (header-check route lain) TIDAK diubah.
+- app.py TASK 3 AUTO-RESET + LAST_SESSION: globals last_session_summary & last_session_timeline. _do_stop_session kini: tangkap asal/total/durasi_detik/points SEBELUM reset → simpan DB → set last_session_summary {asal_ayam, total, durasi_detik, selesai, file} + last_session_timeline = points → BARU counter.reset() + current_count/current_tracks = 0. /api/stats (REST), socket get_stats_socket, dan periodic socketio.emit("update_stats") di detection_thread semuanya menambah kunci "last_session". /api/timeline: saat !active & last_session_timeline list → {points: snapshot, total:0, active:false, session, last_session}; saat active → perilaku lama. /api/reset & _do_start_session mengosongkan kedua global tsb.
+- app.py TASK 4 CAMERA PRESETS: PRESETS_PATH = <root>/camera_presets.json; _load_presets() ([] saat error/absen) + _save_presets() (JSON pretty). Endpoint: GET /api/camera-presets (tanpa PIN), POST {name, source} (PIN; name 1-40 char, source non-empty; upsert by nama persis — source diganti, created asli dipertahankan), DELETE {name} (PIN; exact match + fallback case-insensitive; 404 bila tak ada).
+
+Stage Summary:
+- Backend v2.7 (ronde 7): 4 fitur — audit log operator (tabel audit_log + 2 endpoint), rate-limit PIN anti brute-force (lockout progresif 5/20/60s di 2 endpoint kredensial), auto-reset counter setelah stop + last_session (fix masalah ronde 6: /api/stats tak lagi menampilkan count sesi lama), camera presets persist JSON.
+- Endpoint baru/berubah: GET+DELETE /api/audit, GET+POST+DELETE /api/camera-presets, POST /api/pin/verify & POST /api/pin (rate-limit), /api/stats + socket update_stats & get_stats_socket (+last_session), /api/timeline (mode last_session), /api/session/stop (return total).
+- database.py +3 metode (log_action, get_audit_log, clear_audit_log) + tabel audit_log.
+- Verifikasi curl (semua OK): stats punya last_session; audit GET 200 / DELETE 401 tanpa PIN → 200 dgn PIN; verify salah #1-#3 → 401 (attempts 1-3, locked_for 5 di #3), #4 → 429 retry_after=5; correct 1234 → 200 valid:true; POST /api/pin current salah → 403 attempts=1; presets: [] → save → upsert (created tetap, source ganti) → delete → []; DELETE tanpa PIN 401; sesi E2E: start "QA R7 Audit" → 14s → count=4 → stop → stats: active=false, count=0, last_session{asal_ayam:"QA R7 Audit", total:4, durasi_detik:20.0}; timeline 4 poin (t=8.9..18.3), active:false; history #19 QA R7 Audit → dihapus (cleanup + audit). Audit log menampilkan seluruh jejak: session_start/stop(total=4), history_delete #19, preset_save/delete, pin_verify_fail/ok, pin_locked_out, audit_clear, reset.
+- .env TIDAK berubah (CAMERA_SOURCE video_shackle_berisi.mp4, CONFIDENCE_THRESHOLD=0.25, COUNT_LINE_POSITION=112, ZONE_WIDTH=100, OPERATOR_PIN=1234, PIN_ENABLED=true); camera_presets.json kembali [] setelah cleanup.
+- Backend RUNNING sehat (PID 24987, python -m app.app, 127.0.0.1:5000), py_compile OK, LF endings dipertahankan.
+
+---
+Task ID: 7 (frontend + integrasi + QA)
+Agent: Z.ai Code (main)
+Date: 2026-08-28
+Task: Ronde 7 — QA awal, lalu frontend lengkap untuk 4 fitur backend ronde 7 (log aktivitas, rate-limit PIN UI, sesi terakhir, preset kamera) + styling polish + verifikasi E2E agent-browser.
+
+Work Log:
+- QA awal: layanan sehat (Next :3000, Flask :5000 model loaded FPS 8), dashboard render bersih tanpa error console (dark, ID), semua section hidup. Status v2.6 stabil → fokus fitur baru sesuai rekomendasi ronde 6 (#1 auto-reset, #2 rate-limit, #3 audit log, #4 preset kamera).
+- BACKEND (Task 7-a, subagent): semua tercatat di entri 7-a di atas — audit log + rate-limit PIN + auto-reset/last_session + camera presets, diverifikasi curl, backend hidup sehat.
+- FRONTEND api.ts: tipe baru LastSession, AuditEntry, CameraPreset; Stats.last_session?; class PinRateLimitedError (retryAfter); requestPinUnlock(retryAfter?) kini bawa detail di CustomEvent; verifyPin di-refactor raw-fetch agar membedakan 429 (PinRateLimitedError) vs 401 (PinRequiredError); fungsi baru getAuditLog/clearAuditLog/getCameraPresets/saveCameraPreset/deleteCameraPreset.
+- FRONTEND i18n.ts: ~45 kunci baru ID/EN (pinTerkunci/pinDetik, logAktivitas + 20 kunci log, 16 nama aksi audit aksi*, sesiTerakhir, 12 kunci preset* + presetHapus*).
+- KOMPONEN BARU audit-log-dialog.tsx: trigger ikon ScrollText (sky) di header; dialog timeline vertikal (garis + ikon lingkaran per jenis aksi 17 meta warna, ring-zinc-950 agar menyatu dgn bg), label aksi bilingual via pemetaan aksi<key>, detail mono terpotong + tooltip, waktu relatif (Baru saja/mnt/jam/Kemarin/tanggal), badge jumlah, tombol Bersihkan (AlertDialog konfirmasi merah), empty-state dashed, max-h-55vh ayam-scroll.
+- pin-dialog.tsx: state lockSecs + interval countdown; PinRateLimitedError → tampil alert merah "Terlalu banyak percobaan — coba lagi dalam N detik" (ikon Hourglass pulse) + toast; input disabled + tombol jadi countdown "Ns"; reset saat dialog dibuka.
+- camera-source-dialog.tsx: section "Preset Kamera" (list kartu sky: nama + source mono + Check saat aktif + trash; klik = apply preset), empty state dashed, input nama (maks 40, Enter submit) + tombol "Simpan Preset" (sky, simpan SUMBER AKTIF sebagai preset — upsert), AlertDialog konfirmasi hapus preset (nama mono sky); load() kini Promise.all camera-source + presets; aria-label trash diperbaiki (tadi kepakai teks error).
+- page.tsx: StatCard dapat prop accentLine (garis gradasi 2px warna per kartu di tepi atas: amber/emerald/sky/violet, opacity naik saat hover); kartu Total Ayam saat idle kini menampilkan sub-label AMBER "Sesi terakhir: <asal> · N ayam · durasi" (dari stats.last_session, title tooltip lengkap) menggantikan "Menunggu sesi" — count auto 0 dari backend; AuditLogDialog dipasang di header.
+- next.config.ts: rewrite baru "/api/audit" & "/api/camera-presets" (pola bug ronde 6 #1 dicegah — dashboard langsung :3000 tetap jalan).
+- VERIFIKASI E2E (agent-browser, fresh browser): 0 console error; last-session tampil ("Sesi terakhir: QA R7 Audit · 4 …" amber); AuditLogDialog E2E (14 entri riwayat QA subagent terbaca, ikon+warna per aksi, waktu relatif); rate-limit E2E: start tanpa PIN → gate → salah 9999 ×2 (shake+error) → ×3 mengunci → percobaan ke-4 → 429 → UI countdown "4s" + alert + input/tombol disabled + toast → tunggu → PIN 1234 → gate tutup + sesi "QA R7 RateLimit" LANGSUNG start (auto-retry) → count 11 → Hentikan → TOAST simpan → TOTAL CARD: 0 + "Sesi terakhir: QA R7 RateLimit…" + grafik Tren Kumulatif TETAP menampilkan kurva sesi terakhir (0→11, 41s) via last_session_timeline; preset E2E: simpan "QA Video Demo" (toast, kartu sky aktif) → switch video_shackle_kosong → apply preset → kembali ke berisi (toast) → hapus preset (konfirmasi) → "Belum ada preset tersimpan"; audit trail akhir: history_delete #20, preset_delete, camera_source ×2, preset_save, session_stop total=11, session_start, pin_verify_ok.
+- Cleanup: sesi QA #19 (subagent) & #20 dihapus via UI; presets []; audit log DISENGAJA dibiarkan berisi (demo fitur log); EN penuh (Activity Log/labels aksi), mobile 390px OK (grid 2 kolom, sub-label truncate dgn tooltip).
+- bun run lint → 0 error. Rewrite :3000 utk /api/audit & /api/camera-presets terverifikasi curl. dev.log "✓ Compiled".
+
+Stage Summary:
+- Dashboard v2.7: Log Aktivitas operator (UI timeline + clear), PIN rate-limit UI (countdown 429), auto-reset + "Sesi terakhir" (fix UX ronde 6 #1), Preset Kamera (simpan/apply/hapus). Backend v2.7 (lihat 7-a).
+- Semua rekomendasi ronde 6 #1-#4 tuntas; #5 (upload besar via preview) masih terbuka.
+- Lint bersih; QA agent-browser end-to-end pass (desktop + mobile, ID + EN, gate + lockout + retry + preset + audit).
+
+Risiko / catatan:
+- Rate-limit backend bersifat in-memory global (bukan per-IP): semua client berbagi counter gagal — untuk terminal operator tunggal ini memadai; multi-operator serentak bisa saling mengunci (dokumentasikan bila nanti multi-user).
+- Audit log tumbuh tanpa rotasi (SQLite) — ukuran kecil per baris, aman utk bertahun-tahun operasional normal; tombol clear tersedia.
+- last_session & last_session_timeline hilang saat backend restart (in-memory) — riwayat tetap aman di DB; hanya tampilan kartu "Sesi terakhir" kosong setelah restart (fallback "Menunggu sesi").
+- Sesi lama (id ≤ 20) tanpa durasi → baris riwayat "—"; fine.
+- PIN lockout mengunci JUGA verifikasi gate di tab lain (global) — by design anti brute-force.
+
+Rekomendasi ronde berikutnya (prioritas):
+1. Uji upload video besar (100-300 MB) via preview gateway + indikator "menyiapkan video" saat capture switch (terbuka sejak ronde 5).
+2. Persist last_session ringan ke file/db agar tampilan kartu bertahan setelah restart backend.
+3. Filter/pencarian di Log Aktivitas (by action type) + paginasi bila entri > 150.
+4. Export log aktivitas ke CSV/PDF untuk audit kepatuhan.
+5. Per-IP rate limiting (remote_addr) bila nanti multi-terminal.

@@ -1,0 +1,1614 @@
+     1→# app.py
+     2→from flask import Flask, render_template, Response, jsonify, request, send_file
+     3→from flask_socketio import SocketIO, emit
+     4→
+     5→import cv2
+     6→import numpy as np
+     7→import time
+     8→import os
+     9→import io
+    10→import json
+    11→import re
+    12→import glob
+    13→import threading
+    14→import queue
+    15→
+    16→from datetime import datetime, timedelta
+    17→
+    18→# Batas waktu FFMPEG untuk kamera RTSP/HTTP (8 dtk) agar thread capture
+    19→# tidak menggantung selamanya saat RTSP tidak dapat dijangkau.
+    20→os.environ.setdefault(
+    21→    "OPENCV_FFMPEG_CAPTURE_OPTIONS",
+    22→    "rtsp_transport;tcp|timeout;8000000|stimeout;8000000",
+    23→)
+    24→
+    25→import pandas as pd
+    26→
+    27→# ---- Laporan PDF harian (reportlab) ----
+    28→from reportlab.lib.pagesizes import A4
+    29→from reportlab.lib.units import mm
+    30→from reportlab.lib.colors import HexColor
+    31→from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table as RLTable, TableStyle
+    32→from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    33→from reportlab.graphics.shapes import Drawing, Rect, String
+    34→from reportlab.lib.enums import TA_LEFT
+    35→
+    36→from config import Config
+    37→
+    38→from app.services.detector import AyamDetector
+    39→from app.services.hybrid_counter import HybridCounter
+    40→from app.services.database import Database
+    41→from app.services.excel_exporter import ExcelExporter
+    42→
+    43→
+    44→# =====================================================
+    45→# FLASK APP INITIALIZATION
+    46→# =====================================================
+    47→
+    48→app = Flask(__name__)
+    49→app.config['SECRET_KEY'] = Config.SECRET_KEY
+    50→
+    51→socketio = SocketIO(
+    52→    app,
+    53→    cors_allowed_origins="*",
+    54→    async_mode="threading"
+    55→)
+    56→
+    57→# =====================================================
+    58→# MODULE INITIALIZATION
+    59→# =====================================================
+    60→
+    61→detector = AyamDetector()
+    62→counter = HybridCounter()  # Sekarang menggunakan SimpleCounter
+    63→db = Database()
+    64→excel_exporter = ExcelExporter()
+    65→
+    66→# =====================================================
+    67→# GLOBAL VARIABLES
+    68→# =====================================================
+    69→
+    70→is_processing = False
+    71→current_count = 0
+    72→current_speed = 0
+    73→current_tracks = 0
+    74→session_active = False
+    75→session_started_at = None  # ISO timestamp saat sesi dimulai (untuk durasi riwayat)
+    76→camera_connected = False
+    77→camera_source_request = None   # Sumber baru yang diminta via /api/camera-source (runtime switch)
+    78→camera_last_error = None       # Pesan error kamera terakhir (untuk UI)
+    79→session_data = {
+    80→    "asal_ayam": "",
+    81→    "tanggal": "",
+    82→    "jam": "",
+    83→    "keterangan": ""
+    84→}
+    85→
+    86→# Queues
+    87→frame_queue = queue.Queue(maxsize=2)
+    88→
+    89→# Shared data
+    90→latest_frame = None
+    91→latest_frame_seq = 0          # Sequence untuk deteksi frame baru (Fix 1)
+    92→latest_display_frame = None   # Frame yang sudah digambar overlay (Fix 3)
+    93→latest_display_seq = 0
+    94→latest_detections = []
+    95→frame_lock = threading.Lock()
+    96→detection_lock = threading.Lock()
+    97→
+    98→# Thread control
+    99→capture_running = True
+   100→detection_running = True
+   101→
+   102→# =====================================================
+   103→# CAMERA THREAD
+   104→# =====================================================
+   105→
+   106→def capture_thread():
+   107→    """Thread untuk menangkap frame dari camera.
+   108→    Mendukung pergantian sumber saat runtime via /api/camera-source:
+   109→    - camera_source_request di-set oleh endpoint POST.
+   110→    - Loop memeriksa request tiap iterasi; bila ada, buka sumber baru.
+   111→    - Bila sumber baru gagal dibuka, sumber lama tetap dipakai dan
+   112→      camera_last_error diisi untuk ditampilkan di UI.
+   113→    """
+   114→    global latest_frame, latest_frame_seq, camera_connected
+   115→    global camera_source_request, camera_last_error
+   116→
+   117→    print("[CAPTURE] Started")
+   118→
+   119→    cap = None
+   120→    current_source = str(Config.CAMERA_SOURCE)
+   121→
+   122→    def _is_stream(s: str) -> bool:
+   123→        return s.startswith(("rtsp://", "http://", "https://"))
+   124→
+   125→    def _open(source):
+   126→        """Coba buka sumber dengan beberapa backend. Return VideoCapture atau None.
+   127→        TIDAK me-release cap lama — pemanggil yang mengelola.
+   128→        Untuk stream (RTSP/HTTP) lakukan uji baca 1 frame agar sumber mati
+   129→        terdeteksi dengan cepat."""
+   130→        s = str(source)
+   131→        candidates = [0] if s == "0" else [s]
+   132→        # Stream (RTSP/HTTP) → coba FFMPEG dulu; file/idx → CAP_ANY dulu
+   133→        backends = [cv2.CAP_FFMPEG, cv2.CAP_ANY] if _is_stream(s) else [cv2.CAP_ANY, cv2.CAP_FFMPEG]
+   134→        for src in candidates:
+   135→            for backend in backends:
+   136→                try:
+   137→                    c = cv2.VideoCapture(src, backend)
+   138→                    if c.isOpened():
+   139→                        if _is_stream(s):
+   140→                            ret, _ = c.read()
+   141→                            if not ret:
+   142→                                c.release()
+   143→                                print(f"[CAPTURE] Stream opened but no frame: {src}")
+   144→                                continue
+   145→                            c.set(cv2.CAP_PROP_POS_AVI_RATIO, 0)  # stream: tidak relevan, aman
+   146→                        c.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+   147→                        c.set(cv2.CAP_PROP_FPS, Config.CAMERA_FPS)
+   148→                        c.set(cv2.CAP_PROP_FRAME_WIDTH, Config.CAMERA_WIDTH)
+   149→                        c.set(cv2.CAP_PROP_FRAME_HEIGHT, Config.CAMERA_HEIGHT)
+   150→                        print(f"[CAPTURE] Connected with backend: {backend} → {src}")
+   151→                        return c
+   152→                    c.release()
+   153→                except Exception as e:
+   154→                    print(f"[CAPTURE] Open failed (backend {backend}): {e}")
+   155→        return None
+   156→
+   157→    # ---- Buka sumber awal (retry agar backend tetap hidup saat kamera RTSP belum siap) ----
+   158→    while capture_running and cap is None:
+   159→        # FIX deadlock: proses permintaan pergantian sumber yang masuk
+   160→        # selagi thread masih tertahan di retry sumber awal yang gagal
+   161→        # (mis. RTSP mati yang ter-persist di .env saat startup).
+   162→        if camera_source_request is not None:
+   163→            req = camera_source_request
+   164→            camera_source_request = None
+   165→            if str(req) != current_source:
+   166→                print(f"[CAPTURE] Initial retry: switching source → {req}")
+   167→                current_source = str(req)
+   168→        cap = _open(current_source)
+   169→        if cap is not None:
+   170→            break
+   171→        camera_connected = False
+   172→        camera_last_error = f"Gagal membuka sumber: {current_source} — mencoba ulang..."
+   173→        print(f"[CAPTURE] Camera failed to open, retry in 3s: {current_source}")
+   174→        time.sleep(3)
+   175→
+   176→    is_file_source = not _is_stream(current_source) and current_source != "0"
+   177→    frame_interval = 1.0 / max(Config.CAMERA_FPS, 1)
+   178→
+   179→    print(f"[CAPTURE] Camera opened: {current_source}")
+   180→    print(f"[CAPTURE] Resolution: {Config.CAMERA_WIDTH}x{Config.CAMERA_HEIGHT}")
+   181→    print(f"[CAPTURE] FPS: {Config.CAMERA_FPS}")
+   182→
+   183→    camera_connected = True
+   184→    camera_last_error = None
+   185→
+   186→    while capture_running:
+   187→        # ---- Pergantian sumber saat runtime ----
+   188→        if camera_source_request is not None:
+   189→            req = camera_source_request
+   190→            camera_source_request = None
+   191→            if str(req) != current_source:
+   192→                print(f"[CAPTURE] Switching source → {req}")
+   193→                new_cap = _open(req)
+   194→                if new_cap is not None:
+   195→                    try:
+   196→                        cap.release()
+   197→                    except Exception:
+   198→                        pass
+   199→                    cap = new_cap
+   200→                    current_source = str(req)
+   201→                    is_file_source = not _is_stream(current_source) and current_source != "0"
+   202→                    camera_connected = True
+   203→                    camera_last_error = None
+   204→                    print(f"[CAPTURE] Source switched OK: {current_source}")
+   205→                else:
+   206→                    camera_last_error = f"Gagal membuka sumber baru: {req} — memakai sumber lama"
+   207→                    print(f"[CAPTURE] {camera_last_error}")
+   208→                    # Pulihkan Config + .env ke sumber lama agar konsisten dengan
+   209→                    # yang benar-benar diputar di layar
+   210→                    try:
+   211→                        Config.CAMERA_SOURCE = current_source
+   212→                        _update_env_file({"CAMERA_SOURCE": current_source})
+   213→                    except Exception:
+   214→                        pass
+   215→            continue
+   216→
+   217→        ret, frame = cap.read()
+   218→
+   219→        if not ret:
+   220→            # Untuk file video: loop ulang dari awal (mode demo/sandbox)
+   221→            if is_file_source:
+   222→                print("[CAPTURE] Video ended, restarting from beginning...")
+   223→                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+   224→                time.sleep(0.05)
+   225→                continue
+   226→            print("[CAPTURE] Failed to read frame, reconnecting...")
+   227→            camera_connected = False
+   228→            cap.release()
+   229→            time.sleep(2)
+   230→            cap = _open(current_source)
+   231→            if cap is not None:
+   232→                camera_connected = True
+   233→                camera_last_error = None
+   234→            else:
+   235→                camera_last_error = f"Koneksi kamera terputus: {current_source}"
+   236→            continue
+   237→        
+   238→        # Pacing untuk file video agar tidak membaca secepat decode
+   239→        if is_file_source:
+   240→            time.sleep(frame_interval)
+   241→        
+   242→        with frame_lock:
+   243→            latest_frame = frame.copy()
+   244→            latest_frame_seq += 1
+   245→        
+   246→        if is_processing:
+   247→            try:
+   248→                frame_queue.put_nowait(frame)
+   249→            except queue.Full:
+   250→                # Drop-oldest policy: buang frame terlama, masukkan frame terbaru
+   251→                # sehingga queue selalu berisi frame paling baru (akurasi crossing)
+   252→                try:
+   253→                    frame_queue.get_nowait()
+   254→                except queue.Empty:
+   255→                    pass
+   256→                frame_queue.put_nowait(frame)
+   257→    
+   258→    cap.release()
+   259→    camera_connected = False
+   260→    print("[CAPTURE] Stopped")
+   261→
+   262→# =====================================================
+   263→# DETECTION THREAD
+   264→# =====================================================
+   265→
+   266→def detection_thread():
+   267→    """Thread untuk menjalankan deteksi dan penghitungan"""
+   268→    global current_count, current_speed, current_tracks, latest_detections
+   269→    global latest_display_frame, latest_display_seq
+   270→    
+   271→    print("[DETECTION] Started")
+   272→    frame_count = 0
+   273→    last_emit_time = time.time()
+   274→    
+   275→    while detection_running:
+   276→        try:
+   277→            frame = frame_queue.get(timeout=1)
+   278→            frame_count += 1
+   279→            
+   280→            # ============================================
+   281→            # DETEKSI
+   282→            # ============================================
+   283→            detections = detector.detect(frame)
+   284→            
+   285→            # ============================================
+   286→            # HITUNG DENGAN SIMPLE COUNTER
+   287→            # ============================================
+   288→            count = counter.update(detections)
+   289→            
+   290→            # Update global variables
+   291→            current_count = count
+   292→            current_speed = 0  # Tidak ada speed tracking
+   293→            current_tracks = len([d for d in detections if d.get("is_chicken", False)])
+   294→            
+   295→            # ============================================
+   296→            # FILTER DETEKSI YANG SUDAH DIHITUNG
+   297→            # ============================================
+   298→            # Hapus deteksi yang sudah dihitung dari tampilan
+   299→            filtered_detections = []
+   300→            for d in detections:
+   301→                if not d.get("counted", False):
+   302→                    filtered_detections.append(d)
+   303→            
+   304→            # Simpan untuk ditampilkan
+   305→            with detection_lock:
+   306→                latest_detections = filtered_detections.copy()
+   307→            
+   308→            # ============================================
+   309→            # GAMBAR VISUALISASI PADA FRAME YANG DIDETEKSI
+   310→            # ============================================
+   311→            # Overlay digambar di sini (frame deteksi + deteksi yang sama),
+   312→            # sehingga feed tidak mencampur dua frame berbeda (Fix 3).
+   313→            display_frame = draw_visualization(
+   314→                frame,
+   315→                filtered_detections,
+   316→                counter.count_line_x,
+   317→                count
+   318→            )
+   319→            with detection_lock:
+   320→                latest_display_frame = display_frame
+   321→                latest_display_seq += 1
+   322→            
+   323→            # ============================================
+   324→            # SAVE KE EXCEL
+   325→            # ============================================
+   326→            if session_active and count > 0:
+   327→                # Simpan setiap penambahan count (dedup otomatis oleh exporter)
+   328→                for d in detections:
+   329→                    if d.get("is_chicken", False):
+   330→                        excel_exporter.add_detection_direct(
+   331→                            count, 0, d
+   332→                        )
+   333→                        break
+   334→            
+   335→            # ============================================
+   336→            # EMIT STATS KE CLIENT
+   337→            # ============================================
+   338→            if time.time() - last_emit_time > 0.3:
+   339→                socketio.emit("update_stats", {
+   340→                    "count": count,
+   341→                    "speed": 0,
+   342→                    "tracks": current_tracks,
+   343→                    "timestamp": time.time(),
+   344→                    "session_active": session_active,
+   345→                    "session_data": session_data,
+   346→                    "method": "Simple Counter",
+   347→                    "frame": frame_count
+   348→                })
+   349→                last_emit_time = time.time()
+   350→            
+   351→        except queue.Empty:
+   352→            continue
+   353→        except Exception as e:
+   354→            print(f"[DETECTION ERROR] {e}")
+   355→
+   356→# =====================================================
+   357→# VIDEO FEED GENERATOR
+   358→# =====================================================
+   359→
+   360→def draw_visualization(frame, detections, count_line_x, total_count):
+   361→    """
+   362→    Gambar visualisasi dengan garis di kiri
+   363→    """
+   364→    height, width = frame.shape[:2]
+   365→    
+   366→    # ============================================
+   367→    # 1. GARIS MERAH DI KIRI (VERTIKAL)
+   368→    # ============================================
+   369→    cv2.line(frame, (count_line_x, 0), (count_line_x, height), (0, 0, 255), 3)
+   370→    
+   371→    # Label garis
+   372→    cv2.putText(frame, "COUNT LINE", (count_line_x - 60, 30),
+   373→               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+   374→    
+   375→    # ============================================
+   376→    # 2. ZONE DETEKSI (KUNING)
+   377→    # ============================================
+   378→    zone_start = count_line_x - counter.zone_width // 2
+   379→    zone_end = count_line_x + counter.zone_width // 2
+   380→    cv2.rectangle(frame, (zone_start, 0), (zone_end, height), (0, 255, 255), 1)
+   381→    
+   382→    # ============================================
+   383→    # 3. GAMBAR DETEKSI
+   384→    # ============================================
+   385→    for det in detections:
+   386→        if det.get("is_chicken", False):
+   387→            x1, y1, x2, y2 = det["x1"], det["y1"], det["x2"], det["y2"]
+   388→            cx, cy = det["center_x"], det["center_y"]
+   389→            conf = det["confidence"]
+   390→            
+   391→            # Cek apakah sudah dihitung (tidak akan muncul karena sudah difilter)
+   392→            if det.get("counted", False):
+   393→                color = (0, 255, 0)  # Hijau - sudah dihitung
+   394→                label = f"✓ {conf:.2f}"
+   395→            else:
+   396→                color = (0, 255, 255)  # Kuning - belum dihitung
+   397→                label = f"? {conf:.2f}"
+   398→            
+   399→            # Gambar bounding box
+   400→            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+   401→            
+   402→            # Gambar center point
+   403→            cv2.circle(frame, (cx, cy), 4, (255, 0, 0), -1)
+   404→            
+   405→            # Label
+   406→            cv2.putText(frame, label, (x1, y1-10),
+   407→                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+   408→    
+   409→    # ============================================
+   410→    # 4. TOTAL COUNTER
+   411→    # ============================================
+   412→    cv2.putText(frame, f"TOTAL: {total_count}", (10, 60),
+   413→               cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 3)
+   414→    
+   415→    # ============================================
+   416→    # 5. INFORMASI TAMBAHAN
+   417→    # ============================================
+   418→    # Jumlah ayam yang terdeteksi
+   419→    total_detected = len([d for d in detections if d.get("is_chicken", False)])
+   420→    
+   421→    cv2.putText(frame, f"DETEKSI: {total_detected}", (10, 90),
+   422→               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+   423→    
+   424→    # Status session
+   425→    status = "ACTIVE" if session_active else "INACTIVE"
+   426→    color = (0, 255, 0) if session_active else (0, 0, 255)
+   427→    cv2.putText(frame, f"SESSION: {status}", (10, 120),
+   428→               cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+   429→    
+   430→    # ============================================
+   431→    # 6. PANAH PETUNJUK
+   432→    # ============================================
+   433→    cv2.putText(frame, "--> COUNT HERE", (count_line_x + 30, height - 20),
+   434→               cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
+   435→    
+   436→    return frame
+   437→
+   438→def generate_frames():
+   439→    """Generate video frames with overlay (paced, hanya yield frame baru)"""
+   440→    frame_count = 0
+   441→    last_seq = -1
+   442→    last_yield_time = 0.0
+   443→    target_interval = 1.0 / max(Config.CAMERA_FPS, 1)
+   444→
+   445→    while True:
+   446→        processing = is_processing
+   447→
+   448→        # Saat processing: pakai frame display hasil deteksi (sinkron, Fix 3).
+   449→        # Saat idle: pakai frame mentah dari kamera agar feed tetap tampil.
+   450→        if processing:
+   451→            with detection_lock:
+   452→                seq = latest_display_seq
+   453→                frame = latest_display_frame.copy() if latest_display_frame is not None else None
+   454→        else:
+   455→            with frame_lock:
+   456→                seq = latest_frame_seq
+   457→                frame = latest_frame.copy() if latest_frame is not None else None
+   458→
+   459→        if frame is None:
+   460→            time.sleep(0.05)
+   461→            continue
+   462→
+   463→        # ============================================
+   464→        # PACING: hanya yield jika ada frame baru (seq berubah)
+   465→        # ============================================
+   466→        # Mencegah encode duplikat frame yang sama (kurangi beban CPU).
+   467→        if seq == last_seq:
+   468→            time.sleep(0.02)
+   469→            continue
+   470→
+   471→        # Pace output ke interval stabil agar tidak burst
+   472→        now = time.time()
+   473→        wait = target_interval - (now - last_yield_time)
+   474→        if wait > 0:
+   475→            time.sleep(wait)
+   476→
+   477→        # Baca ulang frame terbaru setelah pacing.
+   478→        # Selalu tampilkan frame PALING BARU (tidak skip) agar feed tidak
+   479→        # berhenti ketika producer menghasilkan frame secepat target interval.
+   480→        if processing:
+   481→            with detection_lock:
+   482→                seq = latest_display_seq
+   483→                frame = latest_display_frame.copy() if latest_display_frame is not None else None
+   484→        else:
+   485→            with frame_lock:
+   486→                seq = latest_frame_seq
+   487→                frame = latest_frame.copy() if latest_frame is not None else None
+   488→            if frame is not None:
+   489→                # Idle: gambar visualisasi tanpa deteksi
+   490→                frame = draw_visualization(
+   491→                    frame,
+   492→                    [],
+   493→                    counter.count_line_x,
+   494→                    current_count
+   495→                )
+   496→
+   497→        if frame is None:
+   498→            time.sleep(0.02)
+   499→            continue
+   500→
+   501→        last_seq = seq
+   502→        last_yield_time = time.time()
+   503→        frame_count += 1
+   504→
+   505→        # Frame counter
+   506→        height, width = frame.shape[:2]
+   507→        cv2.putText(frame, f"FRAME: {frame_count}", (width-150, 30),
+   508→                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+   509→        
+   510→        # ============================================
+   511→        # ENCODE DAN YIELD
+   512→        # ============================================
+   513→        ret, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+   514→        yield (b"--frame\r\n"
+   515→               b"Content-Type: image/jpeg\r\n\r\n" +
+   516→               buffer.tobytes() +
+   517→               b"\r\n")
+   518→
+   519→# =====================================================
+   520→# ROUTES
+   521→# =====================================================
+   522→
+   523→@app.route("/")
+   524→def index():
+   525→    """Main page"""
+   526→    stats = db.get_daily_stats()
+   527→    history = db.get_history(20)
+   528→    return render_template(
+   529→        "index.html",
+   530→        stats=stats,
+   531→        history=history
+   532→    )
+   533→
+   534→@app.route("/video_feed")
+   535→def video_feed():
+   536→    """Video streaming endpoint"""
+   537→    return Response(
+   538→        generate_frames(),
+   539→        mimetype="multipart/x-mixed-replace; boundary=frame"
+   540→    )
+   541→
+   542→@app.route("/api/stats")
+   543→def get_stats():
+   544→    """Get current statistics"""
+   545→    return jsonify({
+   546→        "count": current_count,
+   547→        "speed": 0,
+   548→        "tracks": current_tracks,
+   549→        "session_active": session_active,
+   550→        "session_data": session_data,
+   551→        "method": "Simple Counter",
+   552→        "is_processing": is_processing
+   553→    })
+   554→
+   555→@app.route("/api/exports")
+   556→def list_exports():
+   557→    """List exported Excel files"""
+   558→    if not os.path.exists('exports'):
+   559→        return jsonify([])
+   560→    
+   561→    files = []
+   562→    for f in os.listdir('exports'):
+   563→        if f.endswith('.xlsx'):
+   564→            file_path = os.path.join('exports', f)
+   565→            files.append({
+   566→                'name': f,
+   567→                'size': os.path.getsize(file_path),
+   568→                'size_kb': round(os.path.getsize(file_path) / 1024, 1),
+   569→                'modified': os.path.getmtime(file_path),
+   570→                'modified_str': datetime.fromtimestamp(
+   571→                    os.path.getmtime(file_path)
+   572→                ).strftime("%Y-%m-%d %H:%M:%S")
+   573→            })
+   574→    
+   575→    files.sort(key=lambda x: x['modified'], reverse=True)
+   576→    return jsonify(files)
+   577→
+   578→@app.route("/api/download/<filename>")
+   579→def download_file(filename):
+   580→    """Download exported file"""
+   581→    # Security: prevent directory traversal
+   582→    if '..' in filename or '/' in filename or '\\' in filename:
+   583→        return jsonify({"error": "Invalid filename"}), 400
+   584→    
+   585→    file_path = os.path.join('exports', filename)
+   586→    if os.path.exists(file_path):
+   587→        return send_file(file_path, as_attachment=True, download_name=filename)
+   588→    return jsonify({"error": "File not found"}), 404
+   589→
+   590→@app.route("/api/session/status")
+   591→def session_status():
+   592→    """Get session status"""
+   593→    return jsonify({
+   594→        "active": session_active,
+   595→        "data": session_data,
+   596→        "count": current_count,
+   597→        "speed": current_speed,
+   598→        "tracks": current_tracks
+   599→    })
+   600→
+   601→@app.route("/api/device")
+   602→def get_device():
+   603→    """Query selected hardware profile + camera status (v2.0 feature)"""
+   604→    try:
+   605→        hw = detector.hardware
+   606→        device_info = {
+   607→            "backend": hw.name,
+   608→            "device": hw.device_str,
+   609→            "vendor": hw.vendor,
+   610→            "gpu_type": hw.gpu_type,
+   611→            "vram_gb": hw.vram_gb,
+   612→            "precision": hw.precision,
+   613→            "reason": hw.reason,
+   614→            "verified": hw.verified,
+   615→        }
+   616→    except Exception as e:
+   617→        device_info = {
+   618→            "backend": "unknown",
+   619→            "device": "unknown",
+   620→            "vendor": "unknown",
+   621→            "gpu_type": None,
+   622→            "vram_gb": None,
+   623→            "precision": "FP32",
+   624→            "reason": f"Hardware info unavailable: {e}",
+   625→            "verified": False,
+   626→        }
+   627→    
+   628→    device_info.update({
+   629→        "model_path": Config.YOLO_MODEL_PATH,
+   630→        "model_loaded": detector.model is not None,
+   631→        "confidence": Config.CONFIDENCE_THRESHOLD,
+   632→        "camera_source": str(Config.CAMERA_SOURCE),
+   633→        "camera_connected": camera_connected,
+   634→        "camera_error": camera_last_error,
+   635→        "camera_fps": Config.CAMERA_FPS,
+   636→        "camera_resolution": f"{Config.CAMERA_WIDTH}x{Config.CAMERA_HEIGHT}",
+   637→        "count_line_x": Config.COUNT_LINE_X,
+   638→        "zone_width": Config.ZONE_WIDTH,
+   639→    })
+   640→    return jsonify(device_info)
+   641→
+   642→@app.route("/api/history")
+   643→def get_history_api():
+   644→    """Get session history + daily stats from database"""
+   645→    try:
+   646→        return jsonify({
+   647→            "history": db.get_history(30),
+   648→            "stats": db.get_daily_stats()
+   649→        })
+   650→    except Exception as e:
+   651→        return jsonify({"history": [], "stats": {"total_sessions": 0, "total_count": 0}, "error": str(e)})
+   652→
+   653→
+   654→@app.route("/api/history/<int:session_id>", methods=["DELETE"])
+   655→def delete_history_api(session_id):
+   656→    """Hapus sesi dari riwayat + file Excel terkait (jika ada)"""
+   657→    guarded = _pin_guard()
+   658→    if guarded:
+   659→        return guarded
+   660→    try:
+   661→        file_name = db.delete_session(session_id)
+   662→        if file_name is None:
+   663→            return jsonify({"status": "error", "message": "session not found"}), 404
+   664→
+   665→        removed_file = False
+   666→        if file_name:
+   667→            # file_name disimpan relatif terhadap folder exports
+   668→            safe = os.path.basename(file_name)
+   669→            path = os.path.join(excel_exporter.exports_dir, safe)
+   670→            if os.path.isfile(path):
+   671→                os.remove(path)
+   672→                removed_file = True
+   673→                print(f"[DB] Removed export file: {safe}")
+   674→        return jsonify({"status": "deleted", "id": session_id, "file_removed": removed_file})
+   675→    except Exception as e:
+   676→        return jsonify({"status": "error", "message": str(e)}), 500
+   677→
+   678→
+   679→@app.route("/api/history/<int:session_id>")
+   680→def session_detail_api(session_id):
+   681→    """Detail satu sesi (untuk dialog detail di frontend)"""
+   682→    try:
+   683→        s = db.get_session(session_id)
+   684→        if not s:
+   685→            return jsonify({"error": "session not found"}), 404
+   686→        return jsonify(s)
+   687→    except Exception as e:
+   688→        return jsonify({"error": str(e)}), 500
+   689→
+   690→# =====================================================
+   691→# OPERATOR PIN (proteksi aksi destruktif)
+   692→# =====================================================
+   693→
+   694→def _pin_guard():
+   695→    """Return None bila aksi diizinkan, atau (response, 401) bila PIN dibutuhkan.
+   696→
+   697→    Frontend mengirim header 'X-Operator-Pin' pada semua request mutasi.
+   698→    Bila PIN_ENABLED=false, semua mutasi bebas (mode praktik/demo).
+   699→    """
+   700→    if not Config.PIN_ENABLED:
+   701→        return None
+   702→    pin = request.headers.get("X-Operator-Pin", "")
+   703→    if pin and pin == str(Config.OPERATOR_PIN):
+   704→        return None
+   705→    return jsonify({"error": "pin_required"}), 401
+   706→
+   707→
+   708→@app.route("/api/pin", methods=["GET"])
+   709→def api_pin_status():
+   710→    """Status proteksi PIN untuk UI (tanpa membocorkan PIN itu sendiri)"""
+   711→    return jsonify({
+   712→        "enabled": bool(Config.PIN_ENABLED),
+   713→        "is_default": str(Config.OPERATOR_PIN) == "1234",
+   714→    })
+   715→
+   716→
+   717→@app.route("/api/pin/verify", methods=["POST"])
+   718→def api_pin_verify():
+   719→    """Verifikasi PIN untuk membuka gate di frontend"""
+   720→    data = request.get_json(silent=True) or {}
+   721→    pin = str(data.get("pin", ""))
+   722→    if pin and pin == str(Config.OPERATOR_PIN):
+   723→        return jsonify({"valid": True})
+   724→    return jsonify({"valid": False, "error": "pin_required"}), 401
+   725→
+   726→
+   727→@app.route("/api/pin", methods=["POST"])
+   728→def api_pin_update():
+   729→    """Ubah PIN dan/atau aktif/nonaktifkan proteksi.
+   730→    Wajib menyertakan current_pin yang benar (kecuali proteksi belum pernah
+   731→    dikonfigurasi — tetap wajib demi keamanan)."""
+   732→    data = request.get_json(silent=True) or {}
+   733→    current = str(data.get("current_pin", ""))
+   734→    if current != str(Config.OPERATOR_PIN):
+   735→        return jsonify({"status": "error", "message": "PIN saat ini salah"}), 403
+   736→
+   737→    new_pin = data.get("new_pin")
+   738→    if new_pin is not None:
+   739→        new_pin = str(new_pin).strip()
+   740→        if not re.fullmatch(r"\d{4,8}", new_pin):
+   741→            return jsonify({"status": "error", "message": "PIN harus 4-8 digit angka"}), 400
+   742→        Config.OPERATOR_PIN = new_pin
+   743→
+   744→    if "enabled" in data:
+   745→        Config.PIN_ENABLED = bool(data.get("enabled"))
+   746→
+   747→    _update_env_file({
+   748→        "OPERATOR_PIN": Config.OPERATOR_PIN,
+   749→        "PIN_ENABLED": "true" if Config.PIN_ENABLED else "false",
+   750→    })
+   751→    print(f"[PIN] Updated (enabled={Config.PIN_ENABLED})")
+   752→    return jsonify({"status": "ok", "enabled": bool(Config.PIN_ENABLED)})
+   753→
+   754→
+   755→# =====================================================
+   756→# REST SESSION CONTROL (untuk frontend Next.js via gateway)
+   757→# =====================================================
+   758→
+   759→def _drain_frame_queue():
+   760→    """Buang semua frame sisa di queue agar tidak terhitung saat sesi berikutnya"""
+   761→    drained = 0
+   762→    while True:
+   763→        try:
+   764→            frame_queue.get_nowait()
+   765→            drained += 1
+   766→        except queue.Empty:
+   767→            break
+   768→    if drained:
+   769→        print(f"[QUEUE] Drained {drained} stale frames")
+   770→
+   771→def _do_start_session(data):
+   772→    """Logika start session (dipakai SocketIO + REST)"""
+   773→    global is_processing, session_active, session_data, current_count, current_tracks, session_started_at
+   774→
+   775→    # GUARD: jika masih ada sesi aktif, simpan dulu sesi lama agar datanya
+   776→    # tidak hilang (bug lama: start baru menimpa buffer Excel tanpa disimpan).
+   777→    if session_active:
+   778→        print("[SESSION] Overwrite guard: previous session still active — auto-saving it first")
+   779→        try:
+   780→            _do_stop_session()
+   781→        except Exception as e:
+   782→            print(f"[SESSION] Auto-save of previous session failed: {e}")
+   783→
+   784→    _drain_frame_queue()
+   785→    counter.reset()
+   786→    current_count = 0
+   787→    current_tracks = 0
+   788→    
+   789→    session_data = {
+   790→        "asal_ayam": data.get("asal_ayam", "Unknown"),
+   791→        "tanggal": data.get("tanggal", datetime.now().strftime("%Y-%m-%d")),
+   792→        "jam": data.get("jam", datetime.now().strftime("%H:%M")),
+   793→        "keterangan": data.get("keterangan", "")
+   794→    }
+   795→    
+   796→    excel_exporter.start_new_session(
+   797→        session_data["asal_ayam"],
+   798→        session_data["jam"],
+   799→        session_data["tanggal"],
+   800→        session_data["keterangan"]
+   801→    )
+   802→    
+   803→    session_started_at = datetime.now().isoformat()
+   804→    session_active = True
+   805→    is_processing = True
+   806→    print(f"[SESSION] Started: {session_data}")
+   807→
+   808→def _do_stop_session():
+   809→    """Logika stop session (dipakai SocketIO + REST). Simpan Excel + DB"""
+   810→    global is_processing, session_active
+   811→    
+   812→    is_processing = False
+   813→    session_active = False
+   814→    _drain_frame_queue()
+   815→    
+   816→    saved_file = excel_exporter.stop_and_save()
+   817→    
+   818→    # Snapshot timeline kumulatif [{t: detik, total: n}, ...] ke DB agar
+   819→    # grafik pertumbuhan sesi tetap tampil di dialog detail setelah restart
+   820→    # backend (dulu hanya hidup di memori counter).
+   821→    timeline_json = None
+   822→    try:
+   823→        start_ts = None
+   824→        if session_started_at:
+   825→            try:
+   826→                start_ts = datetime.fromisoformat(session_started_at).timestamp()
+   827→            except Exception:
+   828→                start_ts = None
+   829→        points = []
+   830→        for h in getattr(counter, "count_history", []):
+   831→            t = (h["timestamp"] - start_ts) if start_ts else 0.0
+   832→            points.append({"t": round(max(t, 0.0), 1), "total": int(h["count"])})
+   833→        if points:
+   834→            timeline_json = json.dumps(points)
+   835→    except Exception as e:
+   836→        print(f"[SESSION] Timeline snapshot failed: {e}")
+   837→    
+   838→    # Simpan riwayat session ke database agar history berfungsi
+   839→    try:
+   840→        db.add_session(
+   841→            asal_ayam=session_data.get("asal_ayam", "Unknown"),
+   842→            tanggal=session_data.get("tanggal", ""),
+   843→            jam=session_data.get("jam", ""),
+   844→            keterangan=session_data.get("keterangan", ""),
+   845→            total_count=current_count,
+   846→            file_name=saved_file or "",
+   847→            start_time=session_started_at,
+   848→            timeline_json=timeline_json,
+   849→        )
+   850→    except Exception as e:
+   851→        print(f"[DB ERROR] Failed to save session history: {e}")
+   852→    
+   853→    print(f"[SESSION] Stopped, file saved: {saved_file}")
+   854→    return saved_file
+   855→
+   856→@app.route("/api/session/start", methods=["POST"])
+   857→def api_session_start():
+   858→    """Start counting session via REST"""
+   859→    guarded = _pin_guard()
+   860→    if guarded:
+   861→        return guarded
+   862→    data = request.get_json(silent=True) or {}
+   863→    _do_start_session(data)
+   864→    return jsonify({"status": "running", "session": session_data})
+   865→
+   866→@app.route("/api/session/stop", methods=["POST"])
+   867→def api_session_stop():
+   868→    """Stop counting session via REST"""
+   869→    guarded = _pin_guard()
+   870→    if guarded:
+   871→        return guarded
+   872→    saved_file = _do_stop_session()
+   873→    return jsonify({"status": "stopped", "file": saved_file})
+   874→
+   875→@app.route("/api/reset", methods=["POST"])
+   876→def api_reset():
+   877→    """Reset counter via REST"""
+   878→    guarded = _pin_guard()
+   879→    if guarded:
+   880→        return guarded
+   881→    global current_count, current_tracks
+   882→    counter.reset()
+   883→    current_count = 0
+   884→    current_tracks = 0
+   885→    return jsonify({"count": 0, "status": "reset"})
+   886→
+   887→@app.route("/api/count/adjust", methods=["POST"])
+   888→def api_count_adjust():
+   889→    """Koreksi manual hitungan oleh operator (+1 / -1).
+   890→
+   891→    Hanya saat sesi aktif agar total Excel/DB tetap konsisten dengan
+   892→    dashboard. Jejak koreksi: count_history (timeline) + baris khusus
+   893→    di Excel (class 'Manual'/'Koreksi Manual').
+   894→    """
+   895→    guarded = _pin_guard()
+   896→    if guarded:
+   897→        return guarded
+   898→    global current_count
+   899→    if not session_active:
+   900→        return jsonify({"status": "error", "message": "Tidak ada sesi aktif"}), 400
+   901→    data = request.get_json(silent=True) or {}
+   902→    try:
+   903→        delta = int(data.get("delta", 0))
+   904→    except (TypeError, ValueError):
+   905→        delta = 0
+   906→    if delta not in (1, -1):
+   907→        return jsonify({"status": "error", "message": "delta harus +1 atau -1"}), 400
+   908→
+   909→    counter.total_count = max(0, counter.total_count + delta)
+   910→    new_total = counter.total_count
+   911→
+   912→    # Jejak di count_history agar timeline & grafik mengikuti koreksi
+   913→    counter.count_history.append({
+   914→        "count": new_total,
+   915→        "position": None,
+   916→        "id": "manual",
+   917→        "timestamp": time.time(),
+   918→    })
+   919→
+   920→    # Catat juga di buffer Excel sesi berjalan
+   921→    try:
+   922→        excel_exporter.add_manual_adjust(new_total, delta)
+   923→    except Exception as e:
+   924→        print(f"[ADJUST] Excel note failed: {e}")
+   925→
+   926→    current_count = new_total
+   927→    print(f"[ADJUST] Manual {delta:+d} → total {new_total}")
+   928→    return jsonify({"status": "ok", "count": new_total, "delta": delta})
+   929→
+   930→# =====================================================
+   931→# RUNTIME SETTINGS (ubah parameter deteksi dari UI,
+   932→# langsung aktif + dipersist ke .env agar tahan restart)
+   933→# =====================================================
+   934→
+   935→ENV_PATH = os.path.join(
+   936→    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"
+   937→)
+   938→
+   939→def _update_env_file(updates: dict):
+   940→    """Perbarui key=value di file .env (tambahkan bila key belum ada)"""
+   941→    lines = []
+   942→    if os.path.exists(ENV_PATH):
+   943→        with open(ENV_PATH, "r", encoding="utf-8") as f:
+   944→            lines = f.readlines()
+   945→    pending = dict(updates)
+   946→    for i, line in enumerate(lines):
+   947→        m = re.match(r"^([A-Z_]+)\s*=", line)
+   948→        if m and m.group(1) in pending:
+   949→            key = m.group(1)
+   950→            lines[i] = f"{key}={pending.pop(key)}\n"
+   951→    for key, val in pending.items():
+   952→        if lines and not lines[-1].endswith("\n"):
+   953→            lines.append("\n")
+   954→        lines.append(f"{key}={val}\n")
+   955→    with open(ENV_PATH, "w", encoding="utf-8") as f:
+   956→        f.writelines(lines)
+   957→    print(f"[SETTINGS] .env updated: {updates}")
+   958→
+   959→@app.route("/api/settings", methods=["GET"])
+   960→def api_settings_get():
+   961→    """Ambil parameter deteksi runtime (aktif + tersimpan)"""
+   962→    return jsonify({
+   963→        "confidence": Config.CONFIDENCE_THRESHOLD,
+   964→        "count_line_x": counter.count_line_x,
+   965→        "zone_width": counter.zone_width,
+   966→        "camera_fps": Config.CAMERA_FPS,
+   967→        "count_line_config": Config.COUNT_LINE_X,
+   968→        "zone_width_config": Config.ZONE_WIDTH,
+   969→    })
+   970→
+   971→@app.route("/api/settings", methods=["POST"])
+   972→def api_settings_post():
+   973→    """Terapkan parameter deteksi runtime + persist ke .env"""
+   974→    guarded = _pin_guard()
+   975→    if guarded:
+   976→        return guarded
+   977→    data = request.get_json(silent=True) or {}
+   978→    updates_env = {}
+   979→    applied = {}
+   980→    try:
+   981→        if "confidence" in data:
+   982→            conf = round(min(0.95, max(0.05, float(data["confidence"]))), 2)
+   983→            Config.CONFIDENCE_THRESHOLD = conf
+   984→            detector.confidence = conf
+   985→            updates_env["CONFIDENCE_THRESHOLD"] = conf
+   986→            applied["confidence"] = conf
+   987→        if "count_line_x" in data:
+   988→            x = int(min(2000, max(0, int(data["count_line_x"]))))
+   989→            Config.COUNT_LINE_X = x
+   990→            Config.COUNT_LINE_POSITION = x
+   991→            counter.count_line_x = x
+   992→            updates_env["COUNT_LINE_POSITION"] = x
+   993→            applied["count_line_x"] = x
+   994→        if "zone_width" in data:
+   995→            w = int(min(500, max(10, int(data["zone_width"]))))
+   996→            Config.ZONE_WIDTH = w
+   997→            counter.zone_width = w
+   998→            updates_env["ZONE_WIDTH"] = w
+   999→            applied["zone_width"] = w
+  1000→        if updates_env:
+  1001→            _update_env_file(updates_env)
+  1002→        return jsonify({"status": "ok", "applied": applied})
+  1003→    except Exception as e:
+  1004→        return jsonify({"status": "error", "message": str(e)}), 400
+  1005→
+  1006→@app.route("/api/camera-source", methods=["GET", "POST"])
+  1007→def api_camera_source():
+  1008→    """Lihat & ganti sumber kamera saat runtime (tanpa restart backend).
+  1009→
+  1010→    GET  → sumber aktif + daftar video demo yang tersedia.
+  1011→    POST → {"source": "<rtsp://... | /path/file.mp4 | 0>"} — bila file lokal
+  1012→           tidak ada → 400. Pergantian diterapkan capture thread secara asinkron;
+  1013→           hasilnya bisa dipantau via /api/device (camera_connected + camera_error).
+  1014→    """
+  1015→    global camera_source_request
+  1016→    if request.method == "GET":
+  1017→        videos = []
+  1018→        try:
+  1019→            # app.py berada di <root>/app/ → video demo ada di root project
+  1020→            root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+  1021→            for pattern in ("*.mp4", "*.avi", "*.mov", "*.mkv"):
+  1022→                for p in sorted(glob.glob(os.path.join(root, pattern))):
+  1023→                    try:
+  1024→                        videos.append({
+  1025→                            "path": p,
+  1026→                            "name": os.path.basename(p),
+  1027→                            "size_mb": round(os.path.getsize(p) / (1024 * 1024), 1),
+  1028→                        })
+  1029→                    except Exception:
+  1030→                        pass
+  1031→        except Exception:
+  1032→            pass
+  1033→        src = str(Config.CAMERA_SOURCE)
+  1034→        return jsonify({
+  1035→            "source": src,
+  1036→            "is_stream": src.startswith(("rtsp://", "http://", "https://")),
+  1037→            "is_webcam": src == "0",
+  1038→            "connected": camera_connected,
+  1039→            "error": camera_last_error,
+  1040→            "fps": Config.CAMERA_FPS,
+  1041→            "resolution": f"{Config.CAMERA_WIDTH}x{Config.CAMERA_HEIGHT}",
+  1042→            "videos": videos,
+  1043→        })
+  1044→
+  1045→    data = request.get_json(silent=True) or {}
+  1046→    src = str(data.get("source", "")).strip()
+  1047→    if not src:
+  1048→        return jsonify({"status": "error", "message": "Parameter 'source' wajib diisi"}), 400
+  1049→
+  1050→    guarded = _pin_guard()
+  1051→    if guarded:
+  1052→        return guarded
+  1053→
+  1054→    is_stream = src.startswith(("rtsp://", "http://", "https://"))
+  1055→    if src == "0":
+  1056→        pass  # webcam index
+  1057→    elif not is_stream:
+  1058→        # Normalisasi path relatif terhadap root project backend (induk folder app/)
+  1059→        if not os.path.isabs(src):
+  1060→            src = os.path.normpath(
+  1061→                os.path.join(
+  1062→                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), src
+  1063→                )
+  1064→            )
+  1065→        if not os.path.exists(src):
+  1066→            return jsonify({"status": "error", "message": f"File video tidak ditemukan: {src}"}), 400
+  1067→
+  1068→    camera_source_request = "0" if src == "0" else src
+  1069→    Config.CAMERA_SOURCE = camera_source_request  # pantulkan agar /api/device langsung menunjukkan sumber baru
+  1070→    _update_env_file({"CAMERA_SOURCE": Config.CAMERA_SOURCE})
+  1071→    _drain_frame_queue()
+  1072→    print(f"[CAMERA-SOURCE] Request switch → {Config.CAMERA_SOURCE}")
+  1073→    return jsonify({"status": "ok", "source": str(Config.CAMERA_SOURCE)})
+  1074→
+  1075→
+  1076→# ---- Upload video demo/operator → langsung jadi sumber kamera ----
+  1077→ALLOWED_VIDEO_EXT = {".mp4", ".avi", ".mov", ".mkv"}
+  1078→MAX_UPLOAD_MB = 300
+  1079→
+  1080→
+  1081→@app.route("/api/camera-source/upload", methods=["POST"])
+  1082→def api_camera_source_upload():
+  1083→    """Unggah file video dari operator lalu langsung jadikan sumber kamera.
+  1084→
+  1085→    - Ekstensi diizinkan: mp4/avi/mov/mkv, maksimum 300 MB.
+  1086→    - File disimpan di root project backend dengan prefix 'upload_' agar
+  1087→      otomatis muncul di daftar video demo (GET /api/camera-source).
+  1088→    - Setelah tersimpan, sumber kamera dialihkan ke file tsb (runtime switch,
+  1089→      sama seperti POST /api/camera-source) dan dipersist ke .env.
+  1090→    """
+  1091→    global camera_source_request
+  1092→    guarded = _pin_guard()
+  1093→    if guarded:
+  1094→        return guarded
+  1095→    try:
+  1096→        f = request.files.get("file")
+  1097→        if f is None or not f.filename:
+  1098→            return jsonify({"status": "error", "message": "File 'file' wajib diisi"}), 400
+  1099→
+  1100→        orig_name = os.path.basename(f.filename)
+  1101→        ext = os.path.splitext(orig_name)[1].lower()
+  1102→        if ext not in ALLOWED_VIDEO_EXT:
+  1103→            return jsonify({
+  1104→                "status": "error",
+  1105→                "message": f"Ekstensi tidak didukung: {ext or '(tanpa ekstensi)'} — gunakan mp4/avi/mov/mkv",
+  1106→            }), 400
+  1107→
+  1108→        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+  1109→        safe_base = re.sub(r"[^A-Za-z0-9_-]+", "_", os.path.splitext(orig_name)[0])[:60] or "video"
+  1110→        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+  1111→        dest = os.path.join(root, f"upload_{safe_base}_{stamp}{ext}")
+  1112→
+  1113→        f.save(dest)
+  1114→        # Validasi pakai byte mentah (round MB membuat file kecil tampak 0.0 MB
+  1115→        # dan salah terdeteksi "kosong" — bug upload video pendek)
+  1116→        size_bytes = os.path.getsize(dest)
+  1117→        size_mb = round(size_bytes / (1024 * 1024), 1)
+  1118→        if size_bytes > MAX_UPLOAD_MB * 1024 * 1024:
+  1119→            os.remove(dest)
+  1120→            return jsonify({
+  1121→                "status": "error",
+  1122→                "message": f"File terlalu besar ({size_mb} MB > {MAX_UPLOAD_MB} MB)",
+  1123→            }), 400
+  1124→        if size_bytes < 10 * 1024:
+  1125→            os.remove(dest)
+  1126→            return jsonify({"status": "error", "message": "File kosong / rusak (< 10 KB)"}), 400
+  1127→
+  1128→        # Alihkan sumber kamera ke video yang baru diunggah (runtime switch)
+  1129→        camera_source_request = dest
+  1130→        Config.CAMERA_SOURCE = dest
+  1131→        _update_env_file({"CAMERA_SOURCE": dest})
+  1132→        _drain_frame_queue()
+  1133→        print(f"[CAMERA-SOURCE] Uploaded video → switching: {dest}")
+  1134→        return jsonify({
+  1135→            "status": "ok",
+  1136→            "source": dest,
+  1137→            "name": os.path.basename(dest),
+  1138→            "size_mb": size_mb,
+  1139→        })
+  1140→    except Exception as e:
+  1141→        return jsonify({"status": "error", "message": str(e)}), 500
+  1142→
+  1143→@app.route("/api/timeline")
+  1144→def api_timeline():
+  1145→    """Timeline kumulatif penghitungan sesi berjalan (untuk grafik)"""
+  1146→    try:
+  1147→        start_ts = None
+  1148→        started = excel_exporter.session_info.get("start_time")
+  1149→        if started:
+  1150→            try:
+  1151→                start_ts = datetime.fromisoformat(started).timestamp()
+  1152→            except Exception:
+  1153→                start_ts = None
+  1154→        # FALLBACK (bugfix): setelah sesi dihentikan session_info dikosongkan,
+  1155→        # sehingga semua titik timestamps tadi jatuh ke t=0. Gunakan
+  1156→        # session_started_at (global, bertahan setelah stop) agar sumbu waktu
+  1157→        # grafik sesi terakhir tetap benar.
+  1158→        if start_ts is None and session_started_at:
+  1159→            try:
+  1160→                start_ts = datetime.fromisoformat(session_started_at).timestamp()
+  1161→            except Exception:
+  1162→                start_ts = None
+  1163→        points = []
+  1164→        for h in getattr(counter, "count_history", []):
+  1165→            t = (h["timestamp"] - start_ts) if start_ts else 0.0
+  1166→            points.append({"t": round(max(t, 0.0), 1), "total": int(h["count"])})
+  1167→        return jsonify({
+  1168→            "points": points,
+  1169→            "total": counter.total_count,
+  1170→            "active": session_active,
+  1171→            "session": session_data,
+  1172→        })
+  1173→    except Exception as e:
+  1174→        return jsonify({"points": [], "total": current_count, "active": session_active, "error": str(e)})
+  1175→
+  1176→@app.route("/api/download/csv/<filename>")
+  1177→def download_csv(filename):
+  1178→    """Unduh versi CSV dari file Excel export"""
+  1179→    if ".." in filename or "/" in filename or "\\" in filename:
+  1180→        return jsonify({"error": "Invalid filename"}), 400
+  1181→    xlsx_name = filename[:-4] if filename.endswith(".csv") else filename
+  1182→    if not xlsx_name.endswith(".xlsx"):
+  1183→        xlsx_name += ".xlsx"
+  1184→    file_path = os.path.join("exports", xlsx_name)
+  1185→    if not os.path.exists(file_path):
+  1186→        return jsonify({"error": "File not found"}), 404
+  1187→    try:
+  1188→        df = pd.read_excel(file_path, sheet_name="Data Ayam")
+  1189→        buf = io.StringIO()
+  1190→        df.to_csv(buf, index=False)
+  1191→        csv_name = xlsx_name.replace(".xlsx", ".csv")
+  1192→        return Response(
+  1193→            buf.getvalue(),
+  1194→            mimetype="text/csv",
+  1195→            headers={"Content-Disposition": f"attachment; filename={csv_name}"},
+  1196→        )
+  1197→    except Exception as e:
+  1198→        return jsonify({"error": str(e)}), 500
+  1199→
+  1200→# =====================================================
+  1201→# KELOLA VIDEO UNGGAHAN (upload_*.mp4) + LAPORAN HARIAN PDF
+  1202→# =====================================================
+  1203→
+  1204→@app.route("/api/camera-source/video", methods=["DELETE"])
+  1205→def api_camera_video_delete():
+  1206→    """Hapus video hasil unggahan operator (hanya file ber-prefix 'upload_').
+  1207→
+  1208→    - Nama file dibatasi basename (anti path traversal).
+  1209→    - Video yang sedang AKTIF sebagai sumber kamera tidak boleh dihapus.
+  1210→    """
+  1211→    guarded = _pin_guard()
+  1212→    if guarded:
+  1213→        return guarded
+  1214→    data = request.get_json(silent=True) or {}
+  1215→    name = os.path.basename(str(data.get("name", "")).strip())
+  1216→    if not name:
+  1217→        return jsonify({"status": "error", "message": "Parameter 'name' wajib diisi"}), 400
+  1218→    if not name.startswith("upload_"):
+  1219→        return jsonify({
+  1220→            "status": "error",
+  1221→            "message": "Hanya video unggahan (upload_*) yang boleh dihapus",
+  1222→        }), 400
+  1223→
+  1224→    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+  1225→    path = os.path.join(root, name)
+  1226→    if not os.path.isfile(path):
+  1227→        return jsonify({"status": "error", "message": f"File tidak ditemukan: {name}"}), 404
+  1228→
+  1229→    active = str(Config.CAMERA_SOURCE)
+  1230→    if os.path.basename(active) == name or active == path:
+  1231→        return jsonify({
+  1232→            "status": "error",
+  1233→            "message": "Video sedang dipakai sebagai sumber kamera — ganti sumber dulu",
+  1234→        }), 400
+  1235→
+  1236→    try:
+  1237→        os.remove(path)
+  1238→        print(f"[CAMERA-SOURCE] Uploaded video deleted: {name}")
+  1239→        return jsonify({"status": "ok", "deleted": name})
+  1240→    except Exception as e:
+  1241→        return jsonify({"status": "error", "message": str(e)}), 500
+  1242→
+  1243→
+  1244→def _durasi_str(s):
+  1245→    """Durasi sesi 'Xj Ym' / 'Ym Zs' / 'Zs' dari start_time & end_time ISO."""
+  1246→    try:
+  1247→        st = datetime.fromisoformat(s["start_time"])
+  1248→        en = datetime.fromisoformat(s["end_time"])
+  1249→        secs = max(0, int((en - st).total_seconds()))
+  1250→        if secs <= 0:
+  1251→            return "-"
+  1252→        m, sec = divmod(secs, 60)
+  1253→        h, m = divmod(m, 60)
+  1254→        return f"{h}j {m}m" if h else (f"{m}m {sec:02d}s" if m else f"{sec}s")
+  1255→    except Exception:
+  1256→        return "-"
+  1257→
+  1258→
+  1259→def _rl_bar_chart(bars, empty_text, bar_color="#f59e0b", width=500, height=110, label_size=5.6):
+  1260→    """Grafik batang reportlab sederhana. bars: list of (label, value)."""
+  1261→    d = Drawing(width, height)
+  1262→    if not bars:
+  1263→        d.add(String(20, 60, empty_text, fontName="Helvetica-Oblique", fontSize=9,
+  1264→                     fillColor=HexColor("#a1a1aa")))
+  1265→        return d
+  1266→    area_w, area_h = width - 30, height - 30
+  1267→    max_c = max(1, max(v for _, v in bars))
+  1268→    n = len(bars)
+  1269→    bar_w = min(28.0, max(4.0, area_w / max(n, 1) * 0.6))
+  1270→    step = area_w / max(n, 1)
+  1271→    d.add(Rect(20, 14, area_w, 0.7, fillColor=HexColor("#d4d4d8"), strokeColor=None))
+  1272→    for i, (lbl_txt, v) in enumerate(bars[:48]):  # maks 48 bar agar tetap terbaca
+  1273→        bh = (v / max_c) * area_h
+  1274→        x = 20 + i * step + (step - bar_w) / 2
+  1275→        d.add(Rect(x, 15, bar_w, max(bh, 0.8), fillColor=HexColor(bar_color), strokeColor=None))
+  1276→        lbl = String(x + bar_w / 2, 5, str(lbl_txt), fontName="Helvetica",
+  1277→                     fontSize=label_size, fillColor=HexColor("#71717a"))
+  1278→        lbl.textAnchor = "middle"
+  1279→        d.add(lbl)
+  1280→        if v > 0:
+  1281→            vlab = String(x + bar_w / 2, 15 + bh + 2.5, str(v), fontName="Helvetica-Bold",
+  1282→                          fontSize=label_size + 0.4, fillColor=HexColor("#b45309"))
+  1283→            vlab.textAnchor = "middle"
+  1284→            d.add(vlab)
+  1285→    return d
+  1286→
+  1287→
+  1288→def _build_report_pdf(pdf_title, judul, subjudul, sessions, chart_sections):
+  1289→    """Bangun PDF laporan (dipakai laporan harian & rentang).
+  1290→
+  1291→    Struktur: Judul + subjudul → ringkasan 4 kotak → [grafik batang per
+  1292→    section] → tabel detail sesi → footer. Return bytes PDF.
+  1293→    chart_sections: list of (judul_section, Drawing).
+  1294→    """
+  1295→    total_sessions = len(sessions)
+  1296→    total_chickens = sum(s["total_count"] or 0 for s in sessions)
+  1297→    avg_per_session = (total_chickens / total_sessions) if total_sessions else 0
+  1298→    peak = max(sessions, key=lambda s: s["total_count"] or 0) if sessions else None
+  1299→
+  1300→    buf = io.BytesIO()
+  1301→    doc = SimpleDocTemplate(
+  1302→        buf, pagesize=A4,
+  1303→        leftMargin=18 * mm, rightMargin=18 * mm,
+  1304→        topMargin=16 * mm, bottomMargin=16 * mm,
+  1305→        title=pdf_title,
+  1306→    )
+  1307→    styles = getSampleStyleSheet()
+  1308→    title_style = ParagraphStyle("Judul", parent=styles["Title"], fontSize=17, textColor=HexColor("#18181b"), spaceAfter=2)
+  1309→    sub_style = ParagraphStyle("Sub", parent=styles["Normal"], fontSize=9.5, textColor=HexColor("#71717a"), spaceAfter=10)
+  1310→    h2_style = ParagraphStyle("H2", parent=styles["Heading2"], fontSize=11.5, textColor=HexColor("#b45309"), spaceBefore=8, spaceAfter=4)
+  1311→    cell_style = ParagraphStyle("Cell", parent=styles["Normal"], fontSize=8.5, leading=11)
+  1312→
+  1313→    story = []
+  1314→    story.append(Paragraph(f"🐔 Ayam Counter Pro — {judul}", title_style))
+  1315→    story.append(Paragraph(subjudul, sub_style))
+  1316→
+  1317→    # Ringkasan (4 kotak)
+  1318→    ringkas = [
+  1319→        ["Total Sesi", "Total Ayam", "Rata-rata / Sesi", "Sesi Tertinggi"],
+  1320→        [
+  1321→            str(total_sessions),
+  1322→            f"{total_chickens:,}".replace(",", "."),
+  1323→            f"{avg_per_session:.1f}",
+  1324→            f"{peak['total_count']:,}".replace(",", ".") + f" ({peak['asal_ayam'][:18]})" if peak else "-",
+  1325→        ],
+  1326→    ]
+  1327→    t_ring = RLTable(ringkas, colWidths=[43 * mm] * 4)
+  1328→    t_ring.setStyle(TableStyle([
+  1329→        ("BACKGROUND", (0, 0), (-1, 0), HexColor("#fef3c7")),
+  1330→        ("TEXTCOLOR", (0, 0), (-1, 0), HexColor("#92400e")),
+  1331→        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+  1332→        ("FONTSIZE", (0, 0), (-1, 0), 8.5),
+  1333→        ("FONTNAME", (0, 1), (-1, 1), "Helvetica-Bold"),
+  1334→        ("FONTSIZE", (0, 1), (-1, 1), 11),
+  1335→        ("TEXTCOLOR", (0, 1), (-1, 1), HexColor("#1c1917")),
+  1336→        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+  1337→        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+  1338→        ("GRID", (0, 0), (-1, -1), 0.5, HexColor("#fcd34d")),
+  1339→        ("ROWBACKGROUNDS", (0, 1), (-1, 1), [HexColor("#fffbeb")]),
+  1340→        ("TOPPADDING", (0, 0), (-1, -1), 5),
+  1341→        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+  1342→    ]))
+  1343→    story.append(t_ring)
+  1344→
+  1345→    # Grafik batang per section
+  1346→    for section_title, drawing in chart_sections:
+  1347→        story.append(Paragraph(section_title, h2_style))
+  1348→        story.append(drawing)
+  1349→        story.append(Spacer(1, 4))
+  1350→
+  1351→    # Tabel sesi
+  1352→    story.append(Paragraph("Detail Sesi", h2_style))
+  1353→    header = ["Jam", "Asal Ayam", "Total", "Durasi", "Keterangan"]
+  1354→    rows = [header]
+  1355→    for s in sessions:
+  1356→        ket = (s.get("keterangan") or "").strip()
+  1357→        rows.append([
+  1358→            s["jam"] or "-",
+  1359→            Paragraph((s["asal_ayam"] or "-")[:60], cell_style),
+  1360→            f"{(s['total_count'] or 0):,}".replace(",", "."),
+  1361→            _durasi_str(s),
+  1362→            Paragraph((ket[:70] + "…") if len(ket) > 70 else (ket or "-"), cell_style),
+  1363→        ])
+  1364→    if not sessions:
+  1365→        rows.append(["-", "Tidak ada sesi", "0", "-", "-"])
+  1366→    t_sesi = RLTable(rows, colWidths=[18 * mm, 62 * mm, 20 * mm, 26 * mm, 48 * mm], repeatRows=1)
+  1367→    t_sesi.setStyle(TableStyle([
+  1368→        ("BACKGROUND", (0, 0), (-1, 0), HexColor("#27272a")),
+  1369→        ("TEXTCOLOR", (0, 0), (-1, 0), HexColor("#fafafa")),
+  1370→        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+  1371→        ("FONTSIZE", (0, 0), (-1, 0), 8.5),
+  1372→        ("FONTSIZE", (0, 1), (-1, -1), 8.5),
+  1373→        ("ALIGN", (2, 1), (3, -1), "RIGHT"),
+  1374→        ("ALIGN", (0, 1), (0, -1), "CENTER"),
+  1375→        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+  1376→        ("GRID", (0, 0), (-1, -1), 0.4, HexColor("#d4d4d8")),
+  1377→        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [HexColor("#ffffff"), HexColor("#fafaf9")]),
+  1378→        ("TOPPADDING", (0, 0), (-1, -1), 3.5),
+  1379→        ("BOTTOMPADDING", (0, 0), (-1, -1), 3.5),
+  1380→    ]))
+  1381→    story.append(t_sesi)
+  1382→
+  1383→    story.append(Spacer(1, 8))
+  1384→    foot = ParagraphStyle("Foot", parent=styles["Normal"], fontSize=7.5, textColor=HexColor("#a1a1aa"))
+  1385→    story.append(Paragraph("Dihasilkan otomatis oleh Ayam Counter Pro — YOLOv8 + Flask + Next.js", foot))
+  1386→
+  1387→    doc.build(story)
+  1388→    return buf.getvalue()
+  1389→
+  1390→
+  1391→def _pdf_response(pdf_bytes, filename):
+  1392→    resp = Response(pdf_bytes, mimetype="application/pdf")
+  1393→    resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+  1394→    return resp
+  1395→
+  1396→
+  1397→@app.route("/api/report/daily")
+  1398→def api_report_daily():
+  1399→    """Laporan harian PDF: ringkasan + grafik per sesi + distribusi per jam + tabel.
+  1400→
+  1401→    Query: ?date=YYYY-MM-DD (default hari ini).
+  1402→    Balik: file PDF (attachment) bernama laporan_harian_<tanggal>.pdf
+  1403→    """
+  1404→    tanggal = request.args.get("date", "").strip() or datetime.now().strftime("%Y-%m-%d")
+  1405→    if not re.match(r"^\d{4}-\d{2}-\d{2}$", tanggal):
+  1406→        return jsonify({"status": "error", "message": "Format tanggal harus YYYY-MM-DD"}), 400
+  1407→
+  1408→    try:
+  1409→        sessions = db.get_sessions_by_date(tanggal)
+  1410→    except Exception as e:
+  1411→        return jsonify({"status": "error", "message": str(e)}), 500
+  1412→
+  1413→    # Grafik 1: ayam per sesi (maks 48 bar via _rl_bar_chart)
+  1414→    sesi_bars = [(s["jam"] or f"#{s['id']}", s["total_count"] or 0) for s in sessions]
+  1415→
+  1416→    # Grafik 2 (BARU): distribusi ayam per jam operasional (00-23)
+  1417→    hour_buckets = [(f"{h:02d}", 0) for h in range(24)]
+  1418→    hourly = dict(hour_buckets)
+  1419→    for s in sessions:
+  1420→        try:
+  1421→            hh = int(str(s.get("jam") or "")[:2])
+  1422→            if 0 <= hh <= 23:
+  1423→                hourly[f"{hh:02d}"] = hourly.get(f"{hh:02d}", 0) + (s["total_count"] or 0)
+  1424→        except (TypeError, ValueError):
+  1425→            continue
+  1426→    jam_bars = [(h, v) for h, v in hourly.items()]
+  1427→
+  1428→    chart_sections = [
+  1429→        ("Ayam per Sesi", _rl_bar_chart(sesi_bars, "Tidak ada sesi pada tanggal ini.")),
+  1430→        ("Distribusi per Jam (00–23)", _rl_bar_chart(jam_bars, "-", bar_color="#0ea5e9", label_size=4.6)),
+  1431→    ]
+  1432→
+  1433→    sub = f"Tanggal: <b>{tanggal}</b> · Dibuat: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+  1434→    try:
+  1435→        pdf_bytes = _build_report_pdf(
+  1436→            f"Laporan Harian Ayam Counter — {tanggal}",
+  1437→            "Laporan Harian",
+  1438→            sub,
+  1439→            sessions,
+  1440→            chart_sections,
+  1441→        )
+  1442→    except Exception as e:
+  1443→        return jsonify({"status": "error", "message": f"Gagal membuat PDF: {e}"}), 500
+  1444→    return _pdf_response(pdf_bytes, f"laporan_harian_{tanggal}.pdf")
+  1445→
+  1446→
+  1447→@app.route("/api/report/range")
+  1448→def api_report_range():
+  1449→    """Laporan rentang tanggal PDF (mingguan/bulanan): ringkasan + grafik
+  1450→    ayam per hari + grafik per sesi + tabel detail.
+  1451→
+  1452→    Query: ?from=YYYY-MM-DD&to=YYYY-MM-DD (wajib, from <= to).
+  1453→    Balik: file PDF (attachment) bernama laporan_rentang_<from>_<to>.pdf
+  1454→    """
+  1455→    dfrom = request.args.get("from", "").strip()
+  1456→    dto = request.args.get("to", "").strip()
+  1457→    if not re.match(r"^\d{4}-\d{2}-\d{2}$", dfrom) or not re.match(r"^\d{4}-\d{2}-\d{2}$", dto):
+  1458→        return jsonify({"status": "error", "message": "Format from/to harus YYYY-MM-DD"}), 400
+  1459→    if dfrom > dto:
+  1460→        return jsonify({"status": "error", "message": "'from' tidak boleh setelah 'to'"}), 400
+  1461→
+  1462→    try:
+  1463→        sessions = db.get_sessions_by_range(dfrom, dto)
+  1464→    except Exception as e:
+  1465→        return jsonify({"status": "error", "message": str(e)}), 500
+  1466→
+  1467→    # Grafik 1: ayam per hari (zero-fill antara from..to, maks ~62 hari)
+  1468→    day_map = {}
+  1469→    for s in sessions:
+  1470→        day_map[s["tanggal"]] = day_map.get(s["tanggal"], 0) + (s["total_count"] or 0)
+  1471→    day_bars = []
+  1472→    try:
+  1473→        d0 = datetime.strptime(dfrom, "%Y-%m-%d")
+  1474→        d1 = datetime.strptime(dto, "%Y-%m-%d")
+  1475→    except ValueError:
+  1476→        return jsonify({"status": "error", "message": "Tanggal tidak valid"}), 400
+  1477→    span = (d1 - d0).days
+  1478→    if span <= 62:
+  1479→        for i in range(span + 1):
+  1480→            key = (d0 + timedelta(days=i)).strftime("%Y-%m-%d")
+  1481→            day_bars.append((key[5:], day_map.get(key, 0)))
+  1482→    else:
+  1483→        for key in sorted(day_map):
+  1484→            day_bars.append((key[5:], day_map[key]))
+  1485→
+  1486→    # Grafik 2: ayam per sesi (hanya bila jumlah sesi masih terbaca)
+  1487→    sesi_bars = []
+  1488→    if len(sessions) <= 48:
+  1489→        for s in sessions:
+  1490→            tgl = (s["tanggal"] or "")[5:]
+  1491→            jam_lbl = s["jam"] or f"#{s['id']}"
+  1492→            sesi_bars.append((f"{tgl} {jam_lbl}".strip(), s["total_count"] or 0))
+  1493→
+  1494→    chart_sections = [("Ayam per Hari", _rl_bar_chart(day_bars, "-", bar_color="#059669", label_size=4.6))]
+  1495→    if sesi_bars:
+  1496→        chart_sections.append(("Ayam per Sesi", _rl_bar_chart(sesi_bars, "-")))
+  1497→
+  1498→    sub = (
+  1499→        f"Periode: <b>{dfrom} s/d {dto}</b> · Dibuat: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+  1500→    )
+  1501→    try:
+  1502→        pdf_bytes = _build_report_pdf(
+  1503→            f"Laporan Rentang Ayam Counter — {dfrom} s/d {dto}",
+  1504→            "Laporan Rentang Tanggal",
+  1505→            sub,
+  1506→            sessions,
+  1507→            chart_sections,
+  1508→        )
+  1509→    except Exception as e:
+  1510→        return jsonify({"status": "error", "message": f"Gagal membuat PDF: {e}"}), 500
+  1511→    return _pdf_response(pdf_bytes, f"laporan_rentang_{dfrom}_{dto}.pdf")
+  1512→
+  1513→
+  1514→# =====================================================
+  1515→# SOCKET EVENTS
+  1516→# =====================================================
+  1517→
+  1518→@socketio.on("connect")
+  1519→def connect():
+  1520→    """Client connected"""
+  1521→    print(f"[SOCKET] Client connected: {request.sid}")
+  1522→
+  1523→@socketio.on("disconnect")
+  1524→def disconnect():
+  1525→    """Client disconnected"""
+  1526→    print(f"[SOCKET] Client disconnected: {request.sid}")
+  1527→
+  1528→@socketio.on("start_processing")
+  1529→def start_processing(data):
+  1530→    """Start counting session"""
+  1531→    print(f"[SOCKET] Start processing: {data}")
+  1532→    _do_start_session(data or {})
+  1533→    emit("processing_status", {"status": "running"})
+  1534→
+  1535→@socketio.on("stop_processing")
+  1536→def stop_processing():
+  1537→    """Stop counting session"""
+  1538→    print("[SOCKET] Stop processing")
+  1539→    
+  1540→    saved_file = _do_stop_session()
+  1541→    
+  1542→    emit("processing_status", {"status": "stopped"})
+  1543→    if saved_file:
+  1544→        emit("file_saved", {"file": saved_file})
+  1545→
+  1546→@socketio.on("reset_counter")
+  1547→def reset_counter():
+  1548→    """Reset counter"""
+  1549→    global current_count, current_tracks
+  1550→    
+  1551→    print("[SOCKET] Reset counter")
+  1552→    
+  1553→    counter.reset()
+  1554→    current_count = 0
+  1555→    current_tracks = 0
+  1556→    
+  1557→    emit("counter_reset", {"count": 0})
+  1558→
+  1559→@socketio.on("get_stats")
+  1560→def get_stats_socket():
+  1561→    """Send current stats via socket"""
+  1562→    emit("update_stats", {
+  1563→        "count": current_count,
+  1564→        "speed": 0,
+  1565→        "tracks": current_tracks,
+  1566→        "timestamp": time.time(),
+  1567→        "session_active": session_active,
+  1568→        "session_data": session_data,
+  1569→        "method": "Simple Counter"
+  1570→    })
+  1571→
+  1572→# =====================================================
+  1573→# STARTUP
+  1574→# =====================================================
+  1575→
+  1576→def start_threads():
+  1577→    """Start background threads"""
+  1578→    capture_thread_obj = threading.Thread(target=capture_thread, daemon=True)
+  1579→    capture_thread_obj.start()
+  1580→    
+  1581→    detection_thread_obj = threading.Thread(target=detection_thread, daemon=True)
+  1582→    detection_thread_obj.start()
+  1583→    
+  1584→    print("[STARTUP] Threads started")
+  1585→
+  1586→if __name__ == "__main__":
+  1587→    print("""
+  1588→    ════════════════════════════════════════════════════════
+  1589→      🐔 AYAM COUNTER SYSTEM - SIMPLE COUNTER v2.0
+  1590→      Count when detection touches left line
+  1591→    ════════════════════════════════════════════════════════
+  1592→    """)
+  1593→    
+  1594→    print(f"[STARTUP] Config:")
+  1595→    print(f"  - Camera: {Config.CAMERA_SOURCE}")
+  1596→    print(f"  - Resolution: {Config.CAMERA_WIDTH}x{Config.CAMERA_HEIGHT}")
+  1597→    print(f"  - FPS: {Config.CAMERA_FPS}")
+  1598→    print(f"  - Count Line X: {Config.COUNT_LINE_X}")
+  1599→    print(f"  - Zone Width: {Config.ZONE_WIDTH}")
+  1600→    print(f"  - Confidence: {Config.CONFIDENCE_THRESHOLD}")
+  1601→    print(f"  - Model: {Config.YOLO_MODEL_PATH}")
+  1602→    print("")
+  1603→    
+  1604→    # Start threads
+  1605→    start_threads()
+  1606→    
+  1607→    # Run Flask app
+  1608→    socketio.run(
+  1609→        app,
+  1610→        host="127.0.0.1",
+  1611→        port=5000,
+  1612→        debug=False,
+  1613→        allow_unsafe_werkzeug=True
+  1614→    )

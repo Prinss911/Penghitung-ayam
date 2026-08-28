@@ -1,0 +1,695 @@
+  1001→                />
+  1002→              </div>
+  1003→
+  1004→              {/* active session info */}
+  1005→              {sessionActive && stats.session_data?.asal_ayam ? (
+  1006→                <motion.div
+  1007→                  initial={{ opacity: 0, scale: 0.98 }}
+  1008→                  animate={{ opacity: 1, scale: 1 }}
+  1009→                  className="rounded-lg border border-emerald-900/60 bg-emerald-950/40 p-3 text-xs"
+  1010→                >
+  1011→                  <p className="mb-1.5 flex items-center gap-1.5 font-semibold text-emerald-400">
+  1012→                    <LiveDot active /> {t.aktifBerjalan}
+  1013→                  </p>
+  1014→                  <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-zinc-400">
+  1015→                    <span className="truncate">
+  1016→                      {t.asalAyam}:{" "}
+  1017→                      <span className="font-medium text-zinc-200">
+  1018→                        {stats.session_data.asal_ayam}
+  1019→                      </span>
+  1020→                    </span>
+  1021→                    <span className="inline-flex items-center gap-1">
+  1022→                      <Timer className="h-3 w-3 text-emerald-500" />
+  1023→                      {t.durasiBerjalan}:{" "}
+  1024→                      <span className="font-mono font-semibold tabular-nums text-emerald-400">
+  1025→                        {elapsedLabel}
+  1026→                      </span>
+  1027→                    </span>
+  1028→                    <span>
+  1029→                      {t.tanggal}:{" "}
+  1030→                      <span className="font-medium text-zinc-200">
+  1031→                        {stats.session_data.tanggal}
+  1032→                      </span>
+  1033→                    </span>
+  1034→                    <span>
+  1035→                      {t.jam}:{" "}
+  1036→                      <span className="font-medium text-zinc-200">
+  1037→                        {stats.session_data.jam}
+  1038→                      </span>
+  1039→                    </span>
+  1040→                    <span className="truncate">
+  1041→                      {t.totalAyam}:{" "}
+  1042→                      <span className="font-bold tabular-nums text-emerald-400">
+  1043→                        {stats.count}
+  1044→                      </span>
+  1045→                    </span>
+  1046→                  </div>
+  1047→
+  1048→                  {/* Koreksi manual (+1 / -1) */}
+  1049→                  <div className="mt-2.5 border-t border-emerald-900/50 pt-2.5">
+  1050→                    <div className="flex items-center justify-between gap-2">
+  1051→                      <div className="min-w-0">
+  1052→                        <p className="flex items-center gap-1 text-[11px] font-semibold text-emerald-300">
+  1053→                          <ScanEye className="h-3 w-3" />
+  1054→                          {t.koreksiHitung}
+  1055→                        </p>
+  1056→                        <p className="truncate text-[10px] text-emerald-500/70">
+  1057→                          {t.koreksiHint}
+  1058→                        </p>
+  1059→                      </div>
+  1060→                      <div className="flex shrink-0 items-center gap-1.5">
+  1061→                        <Button
+  1062→                          size="sm"
+  1063→                          variant="outline"
+  1064→                          aria-label={t.koreksiMin}
+  1065→                          title={t.koreksiMin}
+  1066→                          disabled={adjustBusy !== null}
+  1067→                          onClick={() => void guardedAction(() => handleAdjust(-1))()}
+  1068→                          className="h-8 w-8 border-emerald-800 bg-emerald-950/60 p-0 text-emerald-300 transition-all hover:scale-105 hover:border-red-500/60 hover:bg-red-950/60 hover:text-red-300 disabled:opacity-40"
+  1069→                        >
+  1070→                          {adjustBusy === -1 ? (
+  1071→                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+  1072→                          ) : (
+  1073→                            <Minus className="h-3.5 w-3.5" />
+  1074→                          )}
+  1075→                        </Button>
+  1076→                        <span className="min-w-8 text-center font-mono text-sm font-bold tabular-nums text-emerald-300">
+  1077→                          {stats.count}
+  1078→                        </span>
+  1079→                        <Button
+  1080→                          size="sm"
+  1081→                          variant="outline"
+  1082→                          aria-label={t.koreksiPlus}
+  1083→                          title={t.koreksiPlus}
+  1084→                          disabled={adjustBusy !== null}
+  1085→                          onClick={() => void guardedAction(() => handleAdjust(1))()}
+  1086→                          className="h-8 w-8 border-emerald-800 bg-emerald-950/60 p-0 text-emerald-300 transition-all hover:scale-105 hover:border-emerald-500/60 hover:bg-emerald-900/60 hover:text-emerald-200 disabled:opacity-40"
+  1087→                        >
+  1088→                          {adjustBusy === 1 ? (
+  1089→                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+  1090→                          ) : (
+  1091→                            <Plus className="h-3.5 w-3.5" />
+  1092→                          )}
+  1093→                        </Button>
+  1094→                      </div>
+  1095→                    </div>
+  1096→                  </div>
+  1097→                </motion.div>
+  1098→              ) : null}
+  1099→
+  1100→              {/* action buttons */}
+  1101→              <div className="flex flex-col gap-2 pt-1">
+  1102→                {sessionActive ? (
+  1103→                  <Button
+  1104→                    onClick={() => void guardedAction(handleStop)()}
+  1105→                    disabled={busy === "stop"}
+  1106→                    className="h-11 bg-red-600 font-semibold text-white hover:bg-red-700 focus-visible:ring-red-500"
+  1107→                  >
+  1108→                    {busy === "stop" ? (
+  1109→                      <>
+  1110→                        <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+  1111→                        {t.menghentikan}
+  1112→                      </>
+  1113→                    ) : (
+  1114→                      <>
+  1115→                        <Square className="mr-2 h-4 w-4" />
+  1116→                        {t.hentikan}
+  1117→                      </>
+  1118→                    )}
+  1119→                  </Button>
+  1120→                ) : (
+  1121→                  <Button
+  1122→                    onClick={() => void guardedAction(handleStart)()}
+  1123→                    disabled={busy === "start" || !canStart}
+  1124→                    title={!canStart ? t.asalAyamRequired : undefined}
+  1125→                    className="h-11 bg-amber-500 font-semibold text-zinc-950 hover:bg-amber-400 focus-visible:ring-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
+  1126→                  >
+  1127→                    {busy === "start" ? (
+  1128→                      <>
+  1129→                        <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-zinc-900/40 border-t-zinc-900" />
+  1130→                        {t.memuat}
+  1131→                      </>
+  1132→                    ) : (
+  1133→                      <>
+  1134→                        <Play className="mr-2 h-4 w-4" />
+  1135→                        {t.mulaiHitung}
+  1136→                      </>
+  1137→                    )}
+  1138→                  </Button>
+  1139→                )}
+  1140→                <Button
+  1141→                  onClick={() => void guardedAction(handleReset)()}
+  1142→                  disabled={busy === "reset" || sessionActive}
+  1143→                  variant="outline"
+  1144→                  className="h-10 border-zinc-800 bg-transparent text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100"
+  1145→                >
+  1146→                  <RotateCcw className="mr-2 h-4 w-4" />
+  1147→                  {t.reset}
+  1148→                </Button>
+  1149→              </div>
+  1150→            </CardContent>
+  1151→          </Card>
+  1152→        </motion.section>
+  1153→
+  1154→        {/* ---- Charts row: trend + weekly ---- */}
+  1155→        <motion.section
+  1156→          className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2"
+  1157→          initial={fadeUp.initial}
+  1158→          animate={fadeUp.animate}
+  1159→          transition={{ duration: 0.35, delay: 0.12 }}
+  1160→        >
+  1161→          <SessionTrendChart
+  1162→            points={timeline}
+  1163→            total={stats.count}
+  1164→            active={sessionActive}
+  1165→            t={t}
+  1166→          />
+  1167→
+  1168→          {/* Weekly summary */}
+  1169→          <Card className="border-zinc-800 bg-zinc-900/60">
+  1170→            <CardHeader className="pb-2">
+  1171→              <div className="flex flex-wrap items-center justify-between gap-2">
+  1172→                <div>
+  1173→                  <CardTitle className="flex items-center gap-2 text-base">
+  1174→                    <History className="h-4 w-4 text-sky-400" />
+  1175→                    {t.ringkasan7hari}
+  1176→                  </CardTitle>
+  1177→                  <CardDescription className="mt-1">{t.ayamPerHari}</CardDescription>
+  1178→                </div>
+  1179→                <div className="flex items-center gap-1.5">
+  1180→                  <Badge
+  1181→                    variant="outline"
+  1182→                    className="border-sky-900 bg-sky-950 px-2 py-1 text-[10px] font-semibold text-sky-400"
+  1183→                  >
+  1184→                    {t.hariIni}: {daily.total_sessions}
+  1185→                  </Badge>
+  1186→                  <Badge
+  1187→                    variant="outline"
+  1188→                    className="border-amber-900 bg-amber-950 px-2 py-1 text-[10px] font-semibold text-amber-400"
+  1189→                  >
+  1190→                    {t.totalHariIni}: {(daily.total_count ?? 0).toLocaleString()}
+  1191→                  </Badge>
+  1192→                </div>
+  1193→              </div>
+  1194→            </CardHeader>
+  1195→            <CardContent>
+  1196→              <div className="h-44 w-full">
+  1197→                <ResponsiveContainer width="100%" height="100%">
+  1198→                  <BarChart data={weeklyData} margin={{ top: 14, right: 8, left: -18, bottom: 0 }}>
+  1199→                    <defs>
+  1200→                      <linearGradient id="barFillToday" x1="0" y1="0" x2="0" y2="1">
+  1201→                        <stop offset="0%" stopColor="#34d399" stopOpacity={0.95} />
+  1202→                        <stop offset="100%" stopColor="#059669" stopOpacity={0.4} />
+  1203→                      </linearGradient>
+  1204→                      <linearGradient id="barFillPast" x1="0" y1="0" x2="0" y2="1">
+  1205→                        <stop offset="0%" stopColor="#fbbf24" stopOpacity={0.9} />
+  1206→                        <stop offset="100%" stopColor="#d97706" stopOpacity={0.3} />
+  1207→                      </linearGradient>
+  1208→                    </defs>
+  1209→                    <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 3" vertical={false} />
+  1210→                    <XAxis
+  1211→                      dataKey="day"
+  1212→                      tick={{ fill: "var(--chart-tick)", fontSize: 11 }}
+  1213→                      tickLine={false}
+  1214→                      axisLine={{ stroke: "var(--chart-grid)" }}
+  1215→                    />
+  1216→                    <YAxis
+  1217→                      tick={{ fill: "var(--chart-tick)", fontSize: 11 }}
+  1218→                      tickLine={false}
+  1219→                      axisLine={false}
+  1220→                      allowDecimals={false}
+  1221→                    />
+  1222→                    <ReTooltip
+  1223→                      cursor={{ fill: "#18181b", opacity: 0.6 }}
+  1224→                      contentStyle={{
+  1225→                        background: "#09090b",
+  1226→                        border: "1px solid #3f3f46",
+  1227→                        borderRadius: 8,
+  1228→                        fontSize: 12,
+  1229→                        color: "#f4f4f5",
+  1230→                      }}
+  1231→                      formatter={(value: number | string) => [value, t.totalAyam]}
+  1232→                    />
+  1233→                    <Bar
+  1234→                      dataKey="total"
+  1235→                      radius={[5, 5, 0, 0]}
+  1236→                      maxBarSize={44}
+  1237→                      animationDuration={500}
+  1238→                    >
+  1239→                      {weeklyData.map((entry, idx) => (
+  1240→                        <Cell
+  1241→                          key={idx}
+  1242→                          fill={
+  1243→                            idx === weeklyData.length - 1
+  1244→                              ? "url(#barFillToday)"
+  1245→                              : "url(#barFillPast)"
+  1246→                          }
+  1247→                        />
+  1248→                      ))}
+  1249→                    </Bar>
+  1250→                  </BarChart>
+  1251→                </ResponsiveContainer>
+  1252→              </div>
+  1253→              <p className="mt-1.5 flex items-center justify-end gap-3 text-[10px] text-zinc-500">
+  1254→                <span className="inline-flex items-center gap-1.5">
+  1255→                  <span className="h-2 w-2 rounded-sm bg-gradient-to-b from-amber-400 to-amber-600" />
+  1256→                  {lang === "id" ? "Sebelumnya" : "Previous"}
+  1257→                </span>
+  1258→                <span className="inline-flex items-center gap-1.5">
+  1259→                  <span className="h-2 w-2 rounded-sm bg-gradient-to-b from-emerald-400 to-emerald-600" />
+  1260→                  {lang === "id" ? "Hari ini" : "Today"}
+  1261→                </span>
+  1262→              </p>
+  1263→            </CardContent>
+  1264→          </Card>
+  1265→        </motion.section>
+  1266→
+  1267→        {/* ---- Hardware + Exports ---- */}
+  1268→        <motion.section
+  1269→          className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2"
+  1270→          initial={fadeUp.initial}
+  1271→          animate={fadeUp.animate}
+  1272→          transition={{ duration: 0.35, delay: 0.18 }}
+  1273→        >
+  1274→          {/* Hardware detail */}
+  1275→          <Card className="border-zinc-800 bg-zinc-900/60">
+  1276→            <CardHeader className="pb-3">
+  1277→              <CardTitle className="flex items-center gap-2 text-base">
+  1278→                <Cpu className="h-4 w-4 text-violet-400" />
+  1279→                {t.infoHardware}
+  1280→              </CardTitle>
+  1281→              <CardDescription>{t.infoHardwareDesc}</CardDescription>
+  1282→            </CardHeader>
+  1283→            <CardContent>
+  1284→              {device ? (
+  1285→                <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+  1286→                  <div>
+  1287→                    <dt className="text-xs text-zinc-500">{t.backend}</dt>
+  1288→                    <dd className="mt-0.5 font-semibold uppercase">
+  1289→                      {device.backend}
+  1290→                      {device.device && device.device !== device.backend ? (
+  1291→                        <span className="ml-1.5 text-xs font-normal text-zinc-400">
+  1292→                          ({device.device})
+  1293→                        </span>
+  1294→                      ) : null}
+  1295→                    </dd>
+  1296→                  </div>
+  1297→                  <div>
+  1298→                    <dt className="text-xs text-zinc-500">{t.vendor}</dt>
+  1299→                    <dd className="mt-0.5 font-semibold">{device.vendor}</dd>
+  1300→                  </div>
+  1301→                  <div>
+  1302→                    <dt className="text-xs text-zinc-500">{t.presisi}</dt>
+  1303→                    <dd className="mt-0.5 font-semibold">{device.precision}</dd>
+  1304→                  </div>
+  1305→                  <div>
+  1306→                    <dt className="text-xs text-zinc-500">Confidence</dt>
+  1307→                    <dd className="mt-0.5 font-semibold tabular-nums">
+  1308→                      {(device.confidence * 100).toFixed(0)}%
+  1309→                    </dd>
+  1310→                  </div>
+  1311→                  <div className="col-span-2">
+  1312→                    <dt className="text-xs text-zinc-500">{t.model}</dt>
+  1313→                    <dd className="mt-0.5 flex items-center gap-2 font-mono text-xs text-zinc-300">
+  1314→                      <span className="truncate">{device.model_path}</span>
+  1315→                      <Badge
+  1316→                        variant="outline"
+  1317→                        className={`shrink-0 px-1.5 py-0 text-[10px] ${
+  1318→                          device.model_loaded
+  1319→                            ? "border-emerald-900 bg-emerald-950 text-emerald-400"
+  1320→                            : "border-red-900 bg-red-950 text-red-400"
+  1321→                        }`}
+  1322→                      >
+  1323→                        {device.model_loaded ? "LOADED" : "ERROR"}
+  1324→                      </Badge>
+  1325→                    </dd>
+  1326→                  </div>
+  1327→                  <div className="col-span-2 rounded-md bg-zinc-950/60 p-2.5">
+  1328→                    <dt className="flex items-center gap-1.5 text-xs text-zinc-500">
+  1329→                      <Info className="h-3 w-3" /> {t.alasan}
+  1330→                    </dt>
+  1331→                    <dd className="mt-1 text-xs leading-relaxed text-zinc-400">
+  1332→                      {device.reason}
+  1333→                    </dd>
+  1334→                  </div>
+  1335→                </dl>
+  1336→              ) : (
+  1337→                <div className="space-y-3">
+  1338→                  {[0, 1, 2, 3].map((i) => (
+  1339→                    <Skeleton key={i} className="h-5 w-full bg-zinc-800" />
+  1340→                  ))}
+  1341→                </div>
+  1342→              )}
+  1343→            </CardContent>
+  1344→          </Card>
+  1345→
+  1346→          {/* Exports list */}
+  1347→          <Card className="border-zinc-800 bg-zinc-900/60">
+  1348→            <CardHeader className="pb-3">
+  1349→              <div className="flex flex-wrap items-center justify-between gap-2">
+  1350→                <div>
+  1351→                  <CardTitle className="flex items-center gap-2 text-base">
+  1352→                    <FileSpreadsheet className="h-4 w-4 text-emerald-400" />
+  1353→                    {t.fileExcel}
+  1354→                  </CardTitle>
+  1355→                  <CardDescription className="mt-1">{t.fileExcelDesc}</CardDescription>
+  1356→                </div>
+  1357→                <Badge
+  1358→                  variant="outline"
+  1359→                  className="border-emerald-900 bg-emerald-950 px-2 py-1 text-[10px] font-semibold text-emerald-400"
+  1360→                >
+  1361→                  {exports.length} file
+  1362→                </Badge>
+  1363→              </div>
+  1364→            </CardHeader>
+  1365→            <CardContent>
+  1366→              {sortedExports.length === 0 ? (
+  1367→                <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-800 py-10 text-center">
+  1368→                  <FileSpreadsheet className="h-8 w-8 text-zinc-700" />
+  1369→                  <p className="text-sm font-medium text-zinc-400">{t.belumAdaFile}</p>
+  1370→                  <p className="text-xs text-zinc-600">{t.belumAdaFileDesc}</p>
+  1371→                </div>
+  1372→              ) : (
+  1373→                <div className="ayam-scroll max-h-96 space-y-2 overflow-y-auto pr-1">
+  1374→                  {sortedExports.map((f) => (
+  1375→                    <div
+  1376→                      key={f.name}
+  1377→                      className="group flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 transition-colors hover:border-zinc-700 hover:bg-zinc-900"
+  1378→                    >
+  1379→                      <div className="flex min-w-0 items-center gap-3">
+  1380→                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-emerald-500/15 text-emerald-400">
+  1381→                          <FileSpreadsheet className="h-4 w-4" />
+  1382→                        </div>
+  1383→                        <div className="min-w-0">
+  1384→                          <p className="truncate text-sm font-medium text-zinc-200">
+  1385→                            {f.name}
+  1386→                          </p>
+  1387→                          <p className="text-[11px] text-zinc-500">
+  1388→                            {f.modified_str} · {f.size_kb} KB
+  1389→                          </p>
+  1390→                        </div>
+  1391→                      </div>
+  1392→                      <div className="flex shrink-0 items-center gap-1.5">
+  1393→                        <a
+  1394→                          href={ayamApi.csvUrl(f.name)}
+  1395→                          download
+  1396→                          title={t.unduhCsv}
+  1397→                          aria-label={`${t.unduhCsv} ${f.name}`}
+  1398→                          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-zinc-800 bg-zinc-900 text-zinc-400 transition-colors hover:border-sky-500/50 hover:bg-sky-500 hover:text-zinc-950"
+  1399→                        >
+  1400→                          <FileDown className="h-4 w-4" />
+  1401→                        </a>
+  1402→                        <a
+  1403→                          href={ayamApi.downloadUrl(f.name)}
+  1404→                          download
+  1405→                          className="inline-flex h-9 items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900 px-3 text-xs font-semibold text-zinc-300 transition-colors hover:border-amber-500/50 hover:bg-amber-500 hover:text-zinc-950"
+  1406→                          aria-label={`${t.unduh} ${f.name}`}
+  1407→                        >
+  1408→                          <Download className="h-3.5 w-3.5" />
+  1409→                          <span className="hidden sm:inline">{t.unduh}</span>
+  1410→                        </a>
+  1411→                      </div>
+  1412→                    </div>
+  1413→                  ))}
+  1414→                </div>
+  1415→              )}
+  1416→            </CardContent>
+  1417→          </Card>
+  1418→        </motion.section>
+  1419→
+  1420→        {/* ---- History table ---- */}
+  1421→        <motion.section
+  1422→          className="mt-4"
+  1423→          initial={fadeUp.initial}
+  1424→          animate={fadeUp.animate}
+  1425→          transition={{ duration: 0.35, delay: 0.24 }}
+  1426→        >
+  1427→          <Card className="border-zinc-800 bg-zinc-900/60">
+  1428→            <CardHeader className="pb-3">
+  1429→              <div className="flex flex-wrap items-center justify-between gap-3">
+  1430→                <div>
+  1431→                  <CardTitle className="flex items-center gap-2 text-base">
+  1432→                    <History className="h-4 w-4 text-sky-400" />
+  1433→                    {t.riwayatSesi}
+  1434→                  </CardTitle>
+  1435→                  <CardDescription className="mt-1">{t.riwayatDesc}</CardDescription>
+  1436→                </div>
+  1437→                {/* filter controls */}
+  1438→                <div className="flex flex-wrap items-center gap-2">
+  1439→                  <div className="relative">
+  1440→                    <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-600" />
+  1441→                    <Input
+  1442→                      value={historySearch}
+  1443→                      onChange={(e) => setHistorySearch(e.target.value)}
+  1444→                      placeholder={t.cariRiwayat}
+  1445→                      className="h-9 w-44 border-zinc-800 bg-zinc-950 pl-8 text-xs text-zinc-100 placeholder:text-zinc-600 focus-visible:ring-amber-500"
+  1446→                    />
+  1447→                  </div>
+  1448→                  <Input
+  1449→                    type="date"
+  1450→                    value={historyDate}
+  1451→                    onChange={(e) => setHistoryDate(e.target.value)}
+  1452→                    aria-label={t.filterTanggal}
+  1453→                    className="h-9 w-36 border-zinc-800 bg-zinc-950 text-xs text-zinc-100 focus-visible:ring-amber-500"
+  1454→                  />
+  1455→                  {/* Laporan harian PDF (mengikuti filter tanggal / hari ini) */}
+  1456→                  <a
+  1457→                    href={ayamApi.dailyReportUrl(historyDate || tanggal || new Date().toISOString().slice(0, 10))}
+  1458→                    download
+  1459→                    title={t.laporanHarianPh}
+  1460→                    aria-label={t.laporanHarian}
+  1461→                    className="inline-flex h-9 items-center gap-1.5 rounded-md border border-emerald-900 bg-emerald-950/60 px-2.5 text-xs font-semibold text-emerald-400 transition-all hover:-translate-y-px hover:border-emerald-500/50 hover:bg-emerald-900/60 hover:text-emerald-300"
+  1462→                  >
+  1463→                    <FileText className="h-3.5 w-3.5" />
+  1464→                    <span className="hidden lg:inline">{t.laporanHarian}</span>
+  1465→                  </a>
+  1466→                  {/* Laporan rentang tanggal (mingguan/bulanan) */}
+  1467→                  <RangeReportDialog t={t} lang={lang} />
+  1468→                  {historySearch || historyDate ? (
+  1469→                    <Button
+  1470→                      size="sm"
+  1471→                      variant="ghost"
+  1472→                      onClick={() => {
+  1473→                        setHistorySearch("");
+  1474→                        setHistoryDate("");
+  1475→                      }}
+  1476→                      className="h-9 px-2 text-xs text-zinc-400 hover:text-zinc-200"
+  1477→                    >
+  1478→                      {t.tampilkanSemua}
+  1479→                    </Button>
+  1480→                  ) : null}
+  1481→                  <Badge variant="outline" className="border-zinc-800 px-2 py-1 text-[10px] text-zinc-500">
+  1482→                    {filteredHistory.length} {t.hasilFilter}
+  1483→                  </Badge>
+  1484→                </div>
+  1485→              </div>
+  1486→            </CardHeader>
+  1487→            <CardContent>
+  1488→              {history.history.length === 0 ? (
+  1489→                <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-800 py-10 text-center">
+  1490→                  <History className="h-8 w-8 text-zinc-700" />
+  1491→                  <p className="text-sm font-medium text-zinc-400">{t.belumAdaRiwayat}</p>
+  1492→                  <p className="text-xs text-zinc-600">{t.belumAdaRiwayatDesc}</p>
+  1493→                </div>
+  1494→              ) : filteredHistory.length === 0 ? (
+  1495→                <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-800 py-10 text-center">
+  1496→                  <Search className="h-8 w-8 text-zinc-700" />
+  1497→                  <p className="text-sm font-medium text-zinc-400">
+  1498→                    {lang === "id" ? "Tidak ada hasil" : "No results"}
+  1499→                  </p>
+  1500→                </div>
+  1501→              ) : (
+  1502→                <div className="ayam-scroll max-h-96 overflow-x-auto overflow-y-auto rounded-lg border border-zinc-800">
+  1503→                  <Table>
+  1504→                    <TableHeader className="sticky top-0 z-10 bg-zinc-900">
+  1505→                      <TableRow className="border-zinc-800 hover:bg-zinc-900">
+  1506→                        <TableHead className="text-zinc-500">#</TableHead>
+  1507→                        <TableHead className="text-zinc-500">{t.asalAyam}</TableHead>
+  1508→                        <TableHead className="text-zinc-500">{t.tanggal}</TableHead>
+  1509→                        <TableHead className="text-zinc-500">{t.jam}</TableHead>
+  1510→                        <TableHead className="hidden text-right text-zinc-500 md:table-cell">
+  1511→                          {t.durasi}
+  1512→                        </TableHead>
+  1513→                        <TableHead className="hidden text-right text-zinc-500 lg:table-cell">
+  1514→                          {t.rataRata}
+  1515→                        </TableHead>
+  1516→                        <TableHead className="text-right text-zinc-500">
+  1517→                          {t.total}
+  1518→                        </TableHead>
+  1519→                        <TableHead className="text-right text-zinc-500">
+  1520→                          {t.selesai}
+  1521→                        </TableHead>
+  1522→                        <TableHead className="w-16 text-right text-zinc-500">
+  1523→                          <span className="sr-only">{t.hapus}</span>
+  1524→                          <Trash2 className="ml-auto h-3.5 w-3.5" />
+  1525→                        </TableHead>
+  1526→                      </TableRow>
+  1527→                    </TableHeader>
+  1528→                    <TableBody>
+  1529→                      {filteredHistory.map((h) => {
+  1530→                        const st = h.start_time ? new Date(h.start_time).getTime() : NaN;
+  1531→                        const en = h.end_time ? new Date(h.end_time).getTime() : NaN;
+  1532→                        const durSec =
+  1533→                          Number.isFinite(st) && Number.isFinite(en)
+  1534→                            ? Math.max(0, (en - st) / 1000)
+  1535→                            : NaN;
+  1536→                        const rate =
+  1537→                          Number.isFinite(durSec) && durSec > 0
+  1538→                            ? ((h.total_count ?? 0) / durSec) * 60
+  1539→                            : NaN;
+  1540→                        return (
+  1541→                        <TableRow
+  1542→                          key={h.id}
+  1543→                          className="group cursor-pointer border-zinc-800/70 transition-colors hover:bg-amber-500/5"
+  1544→                          onClick={() => openDetail(h)}
+  1545→                          title={t.lihatDetail}
+  1546→                        >
+  1547→                          <TableCell className="font-mono text-xs text-zinc-500">
+  1548→                            {h.id}
+  1549→                          </TableCell>
+  1550→                          <TableCell className="max-w-40 truncate font-medium text-zinc-200">
+  1551→                            <span className="inline-flex items-center gap-1.5">
+  1552→                              {h.asal_ayam}
+  1553→                              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-600 opacity-0 transition-opacity group-hover:opacity-100" />
+  1554→                            </span>
+  1555→                          </TableCell>
+  1556→                          <TableCell className="text-zinc-400">{h.tanggal}</TableCell>
+  1557→                          <TableCell className="text-zinc-400">{h.jam}</TableCell>
+  1558→                          <TableCell className="hidden text-right font-mono text-[11px] tabular-nums text-zinc-400 md:table-cell">
+  1559→                            {Number.isFinite(durSec) && durSec > 0 ? fmtDur(durSec) : "—"}
+  1560→                          </TableCell>
+  1561→                          <TableCell className="hidden text-right font-mono text-[11px] tabular-nums text-sky-400/90 lg:table-cell">
+  1562→                            {Number.isFinite(rate) && rate > 0
+  1563→                              ? `${rate.toFixed(1)}`
+  1564→                              : "—"}
+  1565→                          </TableCell>
+  1566→                          <TableCell className="text-right font-bold tabular-nums text-amber-400">
+  1567→                            {h.total_count?.toLocaleString() ?? 0}
+  1568→                          </TableCell>
+  1569→                          <TableCell className="text-right font-mono text-[11px] text-zinc-500">
+  1570→                            {h.end_time
+  1571→                              ? new Date(h.end_time).toLocaleTimeString(
+  1572→                                  lang === "id" ? "id-ID" : "en-US"
+  1573→                                )
+  1574→                              : "—"}
+  1575→                          </TableCell>
+  1576→                          <TableCell className="text-right">
+  1577→                            <Button
+  1578→                              size="icon"
+  1579→                              variant="ghost"
+  1580→                              aria-label={`${t.hapus} #${h.id} (${h.asal_ayam})`}
+  1581→                              title={t.hapus}
+  1582→                              disabled={deleteBusy}
+  1583→                              onClick={(e) => {
+  1584→                                e.stopPropagation();
+  1585→                                setDeleteTarget(h);
+  1586→                              }}
+  1587→                              className="h-8 w-8 text-zinc-600 opacity-0 transition-all hover:bg-red-500/15 hover:text-red-400 focus-visible:opacity-100 group-hover:opacity-100"
+  1588→                            >
+  1589→                              <Trash2 className="h-3.5 w-3.5" />
+  1590→                            </Button>
+  1591→                          </TableCell>
+  1592→                        </TableRow>
+  1593→                        );
+  1594→                      })}
+  1595→                    </TableBody>
+  1596→                  </Table>
+  1597→                </div>
+  1598→              )}
+  1599→            </CardContent>
+  1600→          </Card>
+  1601→        </motion.section>
+  1602→      </main>
+  1603→
+  1604→      {/* ================= DIALOGS ================= */}
+  1605→      <SessionDetailDialog
+  1606→        session={detailSession}
+  1607→        open={detailOpen}
+  1608→        onOpenChange={setDetailOpen}
+  1609→        t={t}
+  1610→        lang={lang}
+  1611→      />
+  1612→
+  1613→      {/* Gate PIN — dibuka saat aksi terproteksi ditolak (401 pin_required).
+  1614→          Setelah PIN benar, aksi yang tertunda diulang otomatis. */}
+  1615→      <PinGateDialog
+  1616→        open={pinGateOpen}
+  1617→        onOpenChange={(o) => {
+  1618→          setPinGateOpen(o);
+  1619→          if (!o) pendingActionRef.current = null;
+  1620→        }}
+  1621→        onSuccess={() => {
+  1622→          const retry = pendingActionRef.current;
+  1623→          pendingActionRef.current = null;
+  1624→          if (retry) setTimeout(retry, 120);
+  1625→        }}
+  1626→        t={t}
+  1627→      />
+  1628→
+  1629→      <AlertDialog
+  1630→        open={deleteTarget !== null}
+  1631→        onOpenChange={(o) => {
+  1632→          if (!o) setDeleteTarget(null);
+  1633→        }}
+  1634→      >
+  1635→        <AlertDialogContent className="border-zinc-800 bg-zinc-950 text-zinc-100">
+  1636→          <AlertDialogHeader>
+  1637→            <AlertDialogTitle className="flex items-center gap-2">
+  1638→              <Trash2 className="h-4 w-4 text-red-400" />
+  1639→              {t.hapusSesi}
+  1640→            </AlertDialogTitle>
+  1641→            <AlertDialogDescription className="text-zinc-400">
+  1642→              {t.hapusSesiDesc}
+  1643→              {deleteTarget ? (
+  1644→                <span className="mt-2 block rounded-md bg-zinc-900 p-2 font-mono text-xs text-zinc-300">
+  1645→                  #{deleteTarget.id} — {deleteTarget.asal_ayam} ({deleteTarget.tanggal}) ·{" "}
+  1646→                  {deleteTarget.total_count} {t.totalAyam.toLowerCase()}
+  1647→                </span>
+  1648→              ) : null}
+  1649→            </AlertDialogDescription>
+  1650→          </AlertDialogHeader>
+  1651→          <AlertDialogFooter>
+  1652→            <AlertDialogCancel
+  1653→              disabled={deleteBusy}
+  1654→              className="border-zinc-800 bg-transparent text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100"
+  1655→            >
+  1656→              {t.batalkan}
+  1657→            </AlertDialogCancel>
+  1658→            <AlertDialogAction
+  1659→              disabled={deleteBusy}
+  1660→              onClick={(e) => {
+  1661→                e.preventDefault();
+  1662→                void guardedAction(handleDelete)();
+  1663→              }}
+  1664→              className="bg-red-600 font-semibold text-white hover:bg-red-700"
+  1665→            >
+  1666→              {deleteBusy ? (
+  1667→                <>
+  1668→                  <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+  1669→                  {t.menghapus}
+  1670→                </>
+  1671→              ) : (
+  1672→                t.yaHapus
+  1673→              )}
+  1674→            </AlertDialogAction>
+  1675→          </AlertDialogFooter>
+  1676→        </AlertDialogContent>
+  1677→      </AlertDialog>
+  1678→
+  1679→      {/* ================= FOOTER (sticky bottom) ================= */}
+  1680→      <footer className="relative z-10 mt-auto border-t border-zinc-800 bg-zinc-950 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] pt-4">
+  1681→        <div className="mx-auto flex w-full max-w-7xl flex-col items-center justify-between gap-2 px-4 text-xs text-zinc-600 sm:flex-row sm:px-6">
+  1682→          <p className="flex items-center gap-1.5">
+  1683→            <Bird className="h-3.5 w-3.5 text-amber-500/70" />
+  1684→            {t.footerText}
+  1685→          </p>
+  1686→          <p className="flex items-center gap-2 font-mono text-[10px] text-zinc-700">
+  1687→            <span className="hidden h-1 w-1 rounded-full bg-zinc-700 sm:inline-block" />
+  1688→            {t.footerHint}
+  1689→          </p>
+  1690→        </div>
+  1691→      </footer>
+  1692→    </div>
+  1693→  );
+  1694→}
+  1695→

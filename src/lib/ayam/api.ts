@@ -30,6 +30,32 @@ export interface Stats {
   method: string;
   is_processing?: boolean;
   frame?: number;
+  /** Ringkasan sesi terakhir (tersedia setelah stop, count sudah di-reset backend) */
+  last_session?: LastSession | null;
+}
+
+/** Ringkasan sesi terakhir yang baru dihentikan (fitur ronde 7) */
+export interface LastSession {
+  asal_ayam: string;
+  total: number;
+  durasi_detik: number;
+  selesai: string;
+  file: string;
+}
+
+/** Satu baris log aktivitas operator (fitur ronde 7) */
+export interface AuditEntry {
+  id: number;
+  ts: string;
+  action: string;
+  detail: string;
+}
+
+/** Preset sumber kamera tersimpan (fitur ronde 7) */
+export interface CameraPreset {
+  name: string;
+  source: string;
+  created: string;
 }
 
 export interface DeviceInfo {
@@ -130,6 +156,16 @@ export interface PinStatus {
   is_default: boolean;
 }
 
+/** Error khusus bila backend mengunci verifikasi PIN (429 too_many_attempts) */
+export class PinRateLimitedError extends Error {
+  retryAfter: number;
+  constructor(retryAfter: number) {
+    super(`PIN rate limited (${retryAfter}s)`);
+    this.name = "PinRateLimitedError";
+    this.retryAfter = retryAfter;
+  }
+}
+
 // =====================================================
 // OPERATOR PIN (sessionStorage per-tab; dikirim otomatis)
 // =====================================================
@@ -168,10 +204,12 @@ export function clearStoredPin() {
   }
 }
 
-/** Buka gate PIN secara global (didengarkan di page.tsx) */
-export function requestPinUnlock() {
+/** Buka gate PIN secara global (didengarkan di page.tsx) dengan info retry opsional */
+export function requestPinUnlock(retryAfter?: number) {
   try {
-    window.dispatchEvent(new CustomEvent("ayam:pin-required"));
+    window.dispatchEvent(
+      new CustomEvent("ayam:pin-required", { detail: { retryAfter } })
+    );
   } catch {
     /* abaikan */
   }
@@ -217,6 +255,44 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
 
 export const ayamApi = {
   getStats: () => jsonFetch<Stats>(bp("/api/stats")),
+
+  /** Log aktivitas operator (terbaru dulu) */
+  getAuditLog: (limit = 100) =>
+    jsonFetch<{ entries: AuditEntry[] }>(
+      bp(`/api/audit?limit=${Math.min(500, Math.max(1, limit))}`)
+    ),
+
+  /** Bersihkan seluruh log aktivitas (PIN required) */
+  clearAuditLog: () =>
+    jsonFetch<{ status: string; deleted: number }>(bp("/api/audit"), {
+      method: "DELETE",
+    }),
+
+  /** Daftar preset sumber kamera tersimpan */
+  getCameraPresets: () =>
+    jsonFetch<{ presets: CameraPreset[] }>(bp("/api/camera-presets")),
+
+  /** Simpan / perbarui preset sumber kamera (upsert by name, PIN required) */
+  saveCameraPreset: (name: string, source: string) =>
+    jsonFetch<{ status: string; presets: CameraPreset[] }>(
+      bp("/api/camera-presets"),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, source }),
+      }
+    ),
+
+  /** Hapus preset sumber kamera (PIN required) */
+  deleteCameraPreset: (name: string) =>
+    jsonFetch<{ status: string; presets: CameraPreset[] }>(
+      bp("/api/camera-presets"),
+      {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      }
+    ),
 
   getDevice: () => jsonFetch<DeviceInfo>(bp("/api/device")),
 
@@ -297,13 +373,27 @@ export const ayamApi = {
   /** Status proteksi PIN backend */
   getPinStatus: () => jsonFetch<PinStatus>(bp("/api/pin")),
 
-  /** Verifikasi PIN (gate) — 401 bila salah */
-  verifyPin: (pin: string) =>
-    jsonFetch<{ valid: boolean }>(bp("/api/pin/verify"), {
+  /** Verifikasi PIN (gate) — 401 bila salah, 429 bila terkunci (rate-limit) */
+  verifyPin: async (pin: string) => {
+    const res = await fetch(bp("/api/pin/verify"), {
+      cache: "no-store",
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pin }),
-    }),
+    });
+    const body = await safeJson(res);
+    if (res.status === 429) {
+      const ra = Number(body?.["retry_after"] ?? 5);
+      throw new PinRateLimitedError(Number.isFinite(ra) ? ra : 5);
+    }
+    if (!res.ok) {
+      if (res.status === 401 && body && body["error"] === "pin_required") {
+        throw new PinRequiredError();
+      }
+      throw new Error(`HTTP ${res.status}`);
+    }
+    return body as { valid: boolean };
+  },
 
   /** Ubah PIN dan/atau aktif/nonaktif proteksi (wajib current_pin) */
   updatePin: (data: { current_pin: string; new_pin?: string; enabled?: boolean }) =>

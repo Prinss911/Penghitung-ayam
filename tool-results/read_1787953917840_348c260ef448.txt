@@ -1,0 +1,702 @@
+    57→    57→# =====================================================
+    58→    58→# MODULE INITIALIZATION
+    59→    59→# =====================================================
+    60→    60→
+    61→    61→detector = AyamDetector()
+    62→    62→counter = HybridCounter()  # Sekarang menggunakan SimpleCounter
+    63→    63→db = Database()
+    64→    64→excel_exporter = ExcelExporter()
+    65→    65→
+    66→    66→# =====================================================
+    67→    67→# GLOBAL VARIABLES
+    68→    68→# =====================================================
+    69→    69→
+    70→    70→is_processing = False
+    71→    71→current_count = 0
+    72→    72→current_speed = 0
+    73→    73→current_tracks = 0
+    74→    74→session_active = False
+    75→    75→session_started_at = None  # ISO timestamp saat sesi dimulai (untuk durasi riwayat)
+    76→    76→camera_connected = False
+    77→    77→camera_source_request = None   # Sumber baru yang diminta via /api/camera-source (runtime switch)
+    78→    78→camera_last_error = None       # Pesan error kamera terakhir (untuk UI)
+    79→    79→session_data = {
+    80→    80→    "asal_ayam": "",
+    81→    81→    "tanggal": "",
+    82→    82→    "jam": "",
+    83→    83→    "keterangan": ""
+    84→    84→}
+    85→    85→
+    86→    86→# Queues
+    87→    87→frame_queue = queue.Queue(maxsize=2)
+    88→    88→
+    89→    89→# Shared data
+    90→    90→latest_frame = None
+    91→    91→latest_frame_seq = 0          # Sequence untuk deteksi frame baru (Fix 1)
+    92→    92→latest_display_frame = None   # Frame yang sudah digambar overlay (Fix 3)
+    93→    93→latest_display_seq = 0
+    94→    94→latest_detections = []
+    95→    95→frame_lock = threading.Lock()
+    96→    96→detection_lock = threading.Lock()
+    97→    97→
+    98→    98→# Thread control
+    99→    99→capture_running = True
+   100→   100→detection_running = True
+   101→   101→
+   102→   102→# =====================================================
+   103→   103→# CAMERA THREAD
+   104→   104→# =====================================================
+   105→   105→
+   106→   106→def capture_thread():
+   107→   107→    """Thread untuk menangkap frame dari camera.
+   108→   108→    Mendukung pergantian sumber saat runtime via /api/camera-source:
+   109→   109→    - camera_source_request di-set oleh endpoint POST.
+   110→   110→    - Loop memeriksa request tiap iterasi; bila ada, buka sumber baru.
+   111→   111→    - Bila sumber baru gagal dibuka, sumber lama tetap dipakai dan
+   112→   112→      camera_last_error diisi untuk ditampilkan di UI.
+   113→   113→    """
+   114→   114→    global latest_frame, latest_frame_seq, camera_connected
+   115→   115→    global camera_source_request, camera_last_error
+   116→   116→
+   117→   117→    print("[CAPTURE] Started")
+   118→   118→
+   119→   119→    cap = None
+   120→   120→    current_source = str(Config.CAMERA_SOURCE)
+   121→   121→
+   122→   122→    def _is_stream(s: str) -> bool:
+   123→   123→        return s.startswith(("rtsp://", "http://", "https://"))
+   124→   124→
+   125→   125→    def _open(source):
+   126→   126→        """Coba buka sumber dengan beberapa backend. Return VideoCapture atau None.
+   127→   127→        TIDAK me-release cap lama — pemanggil yang mengelola.
+   128→   128→        Untuk stream (RTSP/HTTP) lakukan uji baca 1 frame agar sumber mati
+   129→   129→        terdeteksi dengan cepat."""
+   130→   130→        s = str(source)
+   131→   131→        candidates = [0] if s == "0" else [s]
+   132→   132→        # Stream (RTSP/HTTP) → coba FFMPEG dulu; file/idx → CAP_ANY dulu
+   133→   133→        backends = [cv2.CAP_FFMPEG, cv2.CAP_ANY] if _is_stream(s) else [cv2.CAP_ANY, cv2.CAP_FFMPEG]
+   134→   134→        for src in candidates:
+   135→   135→            for backend in backends:
+   136→   136→                try:
+   137→   137→                    c = cv2.VideoCapture(src, backend)
+   138→   138→                    if c.isOpened():
+   139→   139→                        if _is_stream(s):
+   140→   140→                            ret, _ = c.read()
+   141→   141→                            if not ret:
+   142→   142→                                c.release()
+   143→   143→                                print(f"[CAPTURE] Stream opened but no frame: {src}")
+   144→   144→                                continue
+   145→   145→                            c.set(cv2.CAP_PROP_POS_AVI_RATIO, 0)  # stream: tidak relevan, aman
+   146→   146→                        c.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+   147→   147→                        c.set(cv2.CAP_PROP_FPS, Config.CAMERA_FPS)
+   148→   148→                        c.set(cv2.CAP_PROP_FRAME_WIDTH, Config.CAMERA_WIDTH)
+   149→   149→                        c.set(cv2.CAP_PROP_FRAME_HEIGHT, Config.CAMERA_HEIGHT)
+   150→   150→                        print(f"[CAPTURE] Connected with backend: {backend} → {src}")
+   151→   151→                        return c
+   152→   152→                    c.release()
+   153→   153→                except Exception as e:
+   154→   154→                    print(f"[CAPTURE] Open failed (backend {backend}): {e}")
+   155→   155→        return None
+   156→   156→
+   157→   157→    # ---- Buka sumber awal (retry agar backend tetap hidup saat kamera RTSP belum siap) ----
+   158→   158→    while capture_running and cap is None:
+   159→   159→        # FIX deadlock: proses permintaan pergantian sumber yang masuk
+   160→   160→        # selagi thread masih tertahan di retry sumber awal yang gagal
+   161→   161→        # (mis. RTSP mati yang ter-persist di .env saat startup).
+   162→   162→        if camera_source_request is not None:
+   163→   163→            req = camera_source_request
+   164→   164→            camera_source_request = None
+   165→   165→            if str(req) != current_source:
+   166→   166→                print(f"[CAPTURE] Initial retry: switching source → {req}")
+   167→   167→                current_source = str(req)
+   168→   168→        cap = _open(current_source)
+   169→   169→        if cap is not None:
+   170→   170→            break
+   171→   171→        camera_connected = False
+   172→   172→        camera_last_error = f"Gagal membuka sumber: {current_source} — mencoba ulang..."
+   173→   173→        print(f"[CAPTURE] Camera failed to open, retry in 3s: {current_source}")
+   174→   174→        time.sleep(3)
+   175→   175→
+   176→   176→    is_file_source = not _is_stream(current_source) and current_source != "0"
+   177→   177→    frame_interval = 1.0 / max(Config.CAMERA_FPS, 1)
+   178→   178→
+   179→   179→    print(f"[CAPTURE] Camera opened: {current_source}")
+   180→   180→    print(f"[CAPTURE] Resolution: {Config.CAMERA_WIDTH}x{Config.CAMERA_HEIGHT}")
+   181→   181→    print(f"[CAPTURE] FPS: {Config.CAMERA_FPS}")
+   182→   182→
+   183→   183→    camera_connected = True
+   184→   184→    camera_last_error = None
+   185→   185→
+   186→   186→    while capture_running:
+   187→   187→        # ---- Pergantian sumber saat runtime ----
+   188→   188→        if camera_source_request is not None:
+   189→   189→            req = camera_source_request
+   190→   190→            camera_source_request = None
+   191→   191→            if str(req) != current_source:
+   192→   192→                print(f"[CAPTURE] Switching source → {req}")
+   193→   193→                new_cap = _open(req)
+   194→   194→                if new_cap is not None:
+   195→   195→                    try:
+   196→   196→                        cap.release()
+   197→   197→                    except Exception:
+   198→   198→                        pass
+   199→   199→                    cap = new_cap
+   200→   200→                    current_source = str(req)
+   201→   201→                    is_file_source = not _is_stream(current_source) and current_source != "0"
+   202→   202→                    camera_connected = True
+   203→   203→                    camera_last_error = None
+   204→   204→                    print(f"[CAPTURE] Source switched OK: {current_source}")
+   205→   205→                else:
+   206→   206→                    camera_last_error = f"Gagal membuka sumber baru: {req} — memakai sumber lama"
+   207→   207→                    print(f"[CAPTURE] {camera_last_error}")
+   208→   208→                    # Pulihkan Config + .env ke sumber lama agar konsisten dengan
+   209→   209→                    # yang benar-benar diputar di layar
+   210→   210→                    try:
+   211→   211→                        Config.CAMERA_SOURCE = current_source
+   212→   212→                        _update_env_file({"CAMERA_SOURCE": current_source})
+   213→   213→                    except Exception:
+   214→   214→                        pass
+   215→   215→            continue
+   216→   216→
+   217→   217→        ret, frame = cap.read()
+   218→   218→
+   219→   219→        if not ret:
+   220→   220→            # Untuk file video: loop ulang dari awal (mode demo/sandbox)
+   221→   221→            if is_file_source:
+   222→   222→                print("[CAPTURE] Video ended, restarting from beginning...")
+   223→   223→                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+   224→   224→                time.sleep(0.05)
+   225→   225→                continue
+   226→   226→            print("[CAPTURE] Failed to read frame, reconnecting...")
+   227→   227→            camera_connected = False
+   228→   228→            cap.release()
+   229→   229→            time.sleep(2)
+   230→   230→            cap = _open(current_source)
+   231→   231→            if cap is not None:
+   232→   232→                camera_connected = True
+   233→   233→                camera_last_error = None
+   234→   234→            else:
+   235→   235→                camera_last_error = f"Koneksi kamera terputus: {current_source}"
+   236→   236→            continue
+   237→   237→        
+   238→   238→        # Pacing untuk file video agar tidak membaca secepat decode
+   239→   239→        if is_file_source:
+   240→   240→            time.sleep(frame_interval)
+   241→   241→        
+   242→   242→        with frame_lock:
+   243→   243→            latest_frame = frame.copy()
+   244→   244→            latest_frame_seq += 1
+   245→   245→        
+   246→   246→        if is_processing:
+   247→   247→            try:
+   248→   248→                frame_queue.put_nowait(frame)
+   249→   249→            except queue.Full:
+   250→   250→                # Drop-oldest policy: buang frame terlama, masukkan frame terbaru
+   251→   251→                # sehingga queue selalu berisi frame paling baru (akurasi crossing)
+   252→   252→                try:
+   253→   253→                    frame_queue.get_nowait()
+   254→   254→                except queue.Empty:
+   255→   255→                    pass
+   256→   256→                frame_queue.put_nowait(frame)
+   257→   257→    
+   258→   258→    cap.release()
+   259→   259→    camera_connected = False
+   260→   260→    print("[CAPTURE] Stopped")
+   261→   261→
+   262→   262→# =====================================================
+   263→   263→# DETECTION THREAD
+   264→   264→# =====================================================
+   265→   265→
+   266→   266→def detection_thread():
+   267→   267→    """Thread untuk menjalankan deteksi dan penghitungan"""
+   268→   268→    global current_count, current_speed, current_tracks, latest_detections
+   269→   269→    global latest_display_frame, latest_display_seq
+   270→   270→    
+   271→   271→    print("[DETECTION] Started")
+   272→   272→    frame_count = 0
+   273→   273→    last_emit_time = time.time()
+   274→   274→    
+   275→   275→    while detection_running:
+   276→   276→        try:
+   277→   277→            frame = frame_queue.get(timeout=1)
+   278→   278→            frame_count += 1
+   279→   279→            
+   280→   280→            # ============================================
+   281→   281→            # DETEKSI
+   282→   282→            # ============================================
+   283→   283→            detections = detector.detect(frame)
+   284→   284→            
+   285→   285→            # ============================================
+   286→   286→            # HITUNG DENGAN SIMPLE COUNTER
+   287→   287→            # ============================================
+   288→   288→            count = counter.update(detections)
+   289→   289→            
+   290→   290→            # Update global variables
+   291→   291→            current_count = count
+   292→   292→            current_speed = 0  # Tidak ada speed tracking
+   293→   293→            current_tracks = len([d for d in detections if d.get("is_chicken", False)])
+   294→   294→            
+   295→   295→            # ============================================
+   296→   296→            # FILTER DETEKSI YANG SUDAH DIHITUNG
+   297→   297→            # ============================================
+   298→   298→            # Hapus deteksi yang sudah dihitung dari tampilan
+   299→   299→            filtered_detections = []
+   300→   300→            for d in detections:
+   301→   301→                if not d.get("counted", False):
+   302→   302→                    filtered_detections.append(d)
+   303→   303→            
+   304→   304→            # Simpan untuk ditampilkan
+   305→   305→            with detection_lock:
+   306→   306→                latest_detections = filtered_detections.copy()
+   307→   307→            
+   308→   308→            # ============================================
+   309→   309→            # GAMBAR VISUALISASI PADA FRAME YANG DIDETEKSI
+   310→   310→            # ============================================
+   311→   311→            # Overlay digambar di sini (frame deteksi + deteksi yang sama),
+   312→   312→            # sehingga feed tidak mencampur dua frame berbeda (Fix 3).
+   313→   313→            display_frame = draw_visualization(
+   314→   314→                frame,
+   315→   315→                filtered_detections,
+   316→   316→                counter.count_line_x,
+   317→   317→                count
+   318→   318→            )
+   319→   319→            with detection_lock:
+   320→   320→                latest_display_frame = display_frame
+   321→   321→                latest_display_seq += 1
+   322→   322→            
+   323→   323→            # ============================================
+   324→   324→            # SAVE KE EXCEL
+   325→   325→            # ============================================
+   326→   326→            if session_active and count > 0:
+   327→   327→                # Simpan setiap penambahan count (dedup otomatis oleh exporter)
+   328→   328→                for d in detections:
+   329→   329→                    if d.get("is_chicken", False):
+   330→   330→                        excel_exporter.add_detection_direct(
+   331→   331→                            count, 0, d
+   332→   332→                        )
+   333→   333→                        break
+   334→   334→            
+   335→   335→            # ============================================
+   336→   336→            # EMIT STATS KE CLIENT
+   337→   337→            # ============================================
+   338→   338→            if time.time() - last_emit_time > 0.3:
+   339→   339→                socketio.emit("update_stats", {
+   340→   340→                    "count": count,
+   341→   341→                    "speed": 0,
+   342→   342→                    "tracks": current_tracks,
+   343→   343→                    "timestamp": time.time(),
+   344→   344→                    "session_active": session_active,
+   345→   345→                    "session_data": session_data,
+   346→   346→                    "method": "Simple Counter",
+   347→   347→                    "frame": frame_count
+   348→   348→                })
+   349→   349→                last_emit_time = time.time()
+   350→   350→            
+   351→   351→        except queue.Empty:
+   352→   352→            continue
+   353→   353→        except Exception as e:
+   354→   354→            print(f"[DETECTION ERROR] {e}")
+   355→   355→
+   356→   356→# =====================================================
+   357→   357→# VIDEO FEED GENERATOR
+   358→   358→# =====================================================
+   359→   359→
+   360→   360→def draw_visualization(frame, detections, count_line_x, total_count):
+   361→   361→    """
+   362→   362→    Gambar visualisasi dengan garis di kiri
+   363→   363→    """
+   364→   364→    height, width = frame.shape[:2]
+   365→   365→    
+   366→   366→    # ============================================
+   367→   367→    # 1. GARIS MERAH DI KIRI (VERTIKAL)
+   368→   368→    # ============================================
+   369→   369→    cv2.line(frame, (count_line_x, 0), (count_line_x, height), (0, 0, 255), 3)
+   370→   370→    
+   371→   371→    # Label garis
+   372→   372→    cv2.putText(frame, "COUNT LINE", (count_line_x - 60, 30),
+   373→   373→               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+   374→   374→    
+   375→   375→    # ============================================
+   376→   376→    # 2. ZONE DETEKSI (KUNING)
+   377→   377→    # ============================================
+   378→   378→    zone_start = count_line_x - counter.zone_width // 2
+   379→   379→    zone_end = count_line_x + counter.zone_width // 2
+   380→   380→    cv2.rectangle(frame, (zone_start, 0), (zone_end, height), (0, 255, 255), 1)
+   381→   381→    
+   382→   382→    # ============================================
+   383→   383→    # 3. GAMBAR DETEKSI
+   384→   384→    # ============================================
+   385→   385→    for det in detections:
+   386→   386→        if det.get("is_chicken", False):
+   387→   387→            x1, y1, x2, y2 = det["x1"], det["y1"], det["x2"], det["y2"]
+   388→   388→            cx, cy = det["center_x"], det["center_y"]
+   389→   389→            conf = det["confidence"]
+   390→   390→            
+   391→   391→            # Cek apakah sudah dihitung (tidak akan muncul karena sudah difilter)
+   392→   392→            if det.get("counted", False):
+   393→   393→                color = (0, 255, 0)  # Hijau - sudah dihitung
+   394→   394→                label = f"✓ {conf:.2f}"
+   395→   395→            else:
+   396→   396→                color = (0, 255, 255)  # Kuning - belum dihitung
+   397→   397→                label = f"? {conf:.2f}"
+   398→   398→            
+   399→   399→            # Gambar bounding box
+   400→   400→            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+   401→   401→            
+   402→   402→            # Gambar center point
+   403→   403→            cv2.circle(frame, (cx, cy), 4, (255, 0, 0), -1)
+   404→   404→            
+   405→   405→            # Label
+   406→   406→            cv2.putText(frame, label, (x1, y1-10),
+   407→   407→                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+   408→   408→    
+   409→   409→    # ============================================
+   410→   410→    # 4. TOTAL COUNTER
+   411→   411→    # ============================================
+   412→   412→    cv2.putText(frame, f"TOTAL: {total_count}", (10, 60),
+   413→   413→               cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 3)
+   414→   414→    
+   415→   415→    # ============================================
+   416→   416→    # 5. INFORMASI TAMBAHAN
+   417→   417→    # ============================================
+   418→   418→    # Jumlah ayam yang terdeteksi
+   419→   419→    total_detected = len([d for d in detections if d.get("is_chicken", False)])
+   420→   420→    
+   421→   421→    cv2.putText(frame, f"DETEKSI: {total_detected}", (10, 90),
+   422→   422→               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+   423→   423→    
+   424→   424→    # Status session
+   425→   425→    status = "ACTIVE" if session_active else "INACTIVE"
+   426→   426→    color = (0, 255, 0) if session_active else (0, 0, 255)
+   427→   427→    cv2.putText(frame, f"SESSION: {status}", (10, 120),
+   428→   428→               cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+   429→   429→    
+   430→   430→    # ============================================
+   431→   431→    # 6. PANAH PETUNJUK
+   432→   432→    # ============================================
+   433→   433→    cv2.putText(frame, "--> COUNT HERE", (count_line_x + 30, height - 20),
+   434→   434→               cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
+   435→   435→    
+   436→   436→    return frame
+   437→   437→
+   438→   438→def generate_frames():
+   439→   439→    """Generate video frames with overlay (paced, hanya yield frame baru)"""
+   440→   440→    frame_count = 0
+   441→   441→    last_seq = -1
+   442→   442→    last_yield_time = 0.0
+   443→   443→    target_interval = 1.0 / max(Config.CAMERA_FPS, 1)
+   444→   444→
+   445→   445→    while True:
+   446→   446→        processing = is_processing
+   447→   447→
+   448→   448→        # Saat processing: pakai frame display hasil deteksi (sinkron, Fix 3).
+   449→   449→        # Saat idle: pakai frame mentah dari kamera agar feed tetap tampil.
+   450→   450→        if processing:
+   451→   451→            with detection_lock:
+   452→   452→                seq = latest_display_seq
+   453→   453→                frame = latest_display_frame.copy() if latest_display_frame is not None else None
+   454→   454→        else:
+   455→   455→            with frame_lock:
+   456→   456→                seq = latest_frame_seq
+   457→   457→                frame = latest_frame.copy() if latest_frame is not None else None
+   458→   458→
+   459→   459→        if frame is None:
+   460→   460→            time.sleep(0.05)
+   461→   461→            continue
+   462→   462→
+   463→   463→        # ============================================
+   464→   464→        # PACING: hanya yield jika ada frame baru (seq berubah)
+   465→   465→        # ============================================
+   466→   466→        # Mencegah encode duplikat frame yang sama (kurangi beban CPU).
+   467→   467→        if seq == last_seq:
+   468→   468→            time.sleep(0.02)
+   469→   469→            continue
+   470→   470→
+   471→   471→        # Pace output ke interval stabil agar tidak burst
+   472→   472→        now = time.time()
+   473→   473→        wait = target_interval - (now - last_yield_time)
+   474→   474→        if wait > 0:
+   475→   475→            time.sleep(wait)
+   476→   476→
+   477→   477→        # Baca ulang frame terbaru setelah pacing.
+   478→   478→        # Selalu tampilkan frame PALING BARU (tidak skip) agar feed tidak
+   479→   479→        # berhenti ketika producer menghasilkan frame secepat target interval.
+   480→   480→        if processing:
+   481→   481→            with detection_lock:
+   482→   482→                seq = latest_display_seq
+   483→   483→                frame = latest_display_frame.copy() if latest_display_frame is not None else None
+   484→   484→        else:
+   485→   485→            with frame_lock:
+   486→   486→                seq = latest_frame_seq
+   487→   487→                frame = latest_frame.copy() if latest_frame is not None else None
+   488→   488→            if frame is not None:
+   489→   489→                # Idle: gambar visualisasi tanpa deteksi
+   490→   490→                frame = draw_visualization(
+   491→   491→                    frame,
+   492→   492→                    [],
+   493→   493→                    counter.count_line_x,
+   494→   494→                    current_count
+   495→   495→                )
+   496→   496→
+   497→   497→        if frame is None:
+   498→   498→            time.sleep(0.02)
+   499→   499→            continue
+   500→   500→
+   501→   501→        last_seq = seq
+   502→   502→        last_yield_time = time.time()
+   503→   503→        frame_count += 1
+   504→   504→
+   505→   505→        # Frame counter
+   506→   506→        height, width = frame.shape[:2]
+   507→   507→        cv2.putText(frame, f"FRAME: {frame_count}", (width-150, 30),
+   508→   508→                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+   509→   509→        
+   510→   510→        # ============================================
+   511→   511→        # ENCODE DAN YIELD
+   512→   512→        # ============================================
+   513→   513→        ret, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+   514→   514→        yield (b"--frame\r\n"
+   515→   515→               b"Content-Type: image/jpeg\r\n\r\n" +
+   516→   516→               buffer.tobytes() +
+   517→   517→               b"\r\n")
+   518→   518→
+   519→   519→# =====================================================
+   520→   520→# ROUTES
+   521→   521→# =====================================================
+   522→   522→
+   523→   523→@app.route("/")
+   524→   524→def index():
+   525→   525→    """Main page"""
+   526→   526→    stats = db.get_daily_stats()
+   527→   527→    history = db.get_history(20)
+   528→   528→    return render_template(
+   529→   529→        "index.html",
+   530→   530→        stats=stats,
+   531→   531→        history=history
+   532→   532→    )
+   533→   533→
+   534→   534→@app.route("/video_feed")
+   535→   535→def video_feed():
+   536→   536→    """Video streaming endpoint"""
+   537→   537→    return Response(
+   538→   538→        generate_frames(),
+   539→   539→        mimetype="multipart/x-mixed-replace; boundary=frame"
+   540→   540→    )
+   541→   541→
+   542→   542→@app.route("/api/stats")
+   543→   543→def get_stats():
+   544→   544→    """Get current statistics"""
+   545→   545→    return jsonify({
+   546→   546→        "count": current_count,
+   547→   547→        "speed": 0,
+   548→   548→        "tracks": current_tracks,
+   549→   549→        "session_active": session_active,
+   550→   550→        "session_data": session_data,
+   551→   551→        "method": "Simple Counter",
+   552→   552→        "is_processing": is_processing
+   553→   553→    })
+   554→   554→
+   555→   555→@app.route("/api/exports")
+   556→   556→def list_exports():
+   557→   557→    """List exported Excel files"""
+   558→   558→    if not os.path.exists('exports'):
+   559→   559→        return jsonify([])
+   560→   560→    
+   561→   561→    files = []
+   562→   562→    for f in os.listdir('exports'):
+   563→   563→        if f.endswith('.xlsx'):
+   564→   564→            file_path = os.path.join('exports', f)
+   565→   565→            files.append({
+   566→   566→                'name': f,
+   567→   567→                'size': os.path.getsize(file_path),
+   568→   568→                'size_kb': round(os.path.getsize(file_path) / 1024, 1),
+   569→   569→                'modified': os.path.getmtime(file_path),
+   570→   570→                'modified_str': datetime.fromtimestamp(
+   571→   571→                    os.path.getmtime(file_path)
+   572→   572→                ).strftime("%Y-%m-%d %H:%M:%S")
+   573→   573→            })
+   574→   574→    
+   575→   575→    files.sort(key=lambda x: x['modified'], reverse=True)
+   576→   576→    return jsonify(files)
+   577→   577→
+   578→   578→@app.route("/api/download/<filename>")
+   579→   579→def download_file(filename):
+   580→   580→    """Download exported file"""
+   581→   581→    # Security: prevent directory traversal
+   582→   582→    if '..' in filename or '/' in filename or '\\' in filename:
+   583→   583→        return jsonify({"error": "Invalid filename"}), 400
+   584→   584→    
+   585→   585→    file_path = os.path.join('exports', filename)
+   586→   586→    if os.path.exists(file_path):
+   587→   587→        return send_file(file_path, as_attachment=True, download_name=filename)
+   588→   588→    return jsonify({"error": "File not found"}), 404
+   589→   589→
+   590→   590→@app.route("/api/session/status")
+   591→   591→def session_status():
+   592→   592→    """Get session status"""
+   593→   593→    return jsonify({
+   594→   594→        "active": session_active,
+   595→   595→        "data": session_data,
+   596→   596→        "count": current_count,
+   597→   597→        "speed": current_speed,
+   598→   598→        "tracks": current_tracks
+   599→   599→    })
+   600→   600→
+   601→   601→@app.route("/api/device")
+   602→   602→def get_device():
+   603→   603→    """Query selected hardware profile + camera status (v2.0 feature)"""
+   604→   604→    try:
+   605→   605→        hw = detector.hardware
+   606→   606→        device_info = {
+   607→   607→            "backend": hw.name,
+   608→   608→            "device": hw.device_str,
+   609→   609→            "vendor": hw.vendor,
+   610→   610→            "gpu_type": hw.gpu_type,
+   611→   611→            "vram_gb": hw.vram_gb,
+   612→   612→            "precision": hw.precision,
+   613→   613→            "reason": hw.reason,
+   614→   614→            "verified": hw.verified,
+   615→   615→        }
+   616→   616→    except Exception as e:
+   617→   617→        device_info = {
+   618→   618→            "backend": "unknown",
+   619→   619→            "device": "unknown",
+   620→   620→            "vendor": "unknown",
+   621→   621→            "gpu_type": None,
+   622→   622→            "vram_gb": None,
+   623→   623→            "precision": "FP32",
+   624→   624→            "reason": f"Hardware info unavailable: {e}",
+   625→   625→            "verified": False,
+   626→   626→        }
+   627→   627→    
+   628→   628→    device_info.update({
+   629→   629→        "model_path": Config.YOLO_MODEL_PATH,
+   630→   630→        "model_loaded": detector.model is not None,
+   631→   631→        "confidence": Config.CONFIDENCE_THRESHOLD,
+   632→   632→        "camera_source": str(Config.CAMERA_SOURCE),
+   633→   633→        "camera_connected": camera_connected,
+   634→   634→        "camera_error": camera_last_error,
+   635→   635→        "camera_fps": Config.CAMERA_FPS,
+   636→   636→        "camera_resolution": f"{Config.CAMERA_WIDTH}x{Config.CAMERA_HEIGHT}",
+   637→   637→        "count_line_x": Config.COUNT_LINE_X,
+   638→   638→        "zone_width": Config.ZONE_WIDTH,
+   639→   639→    })
+   640→   640→    return jsonify(device_info)
+   641→   641→
+   642→   642→@app.route("/api/history")
+   643→   643→def get_history_api():
+   644→   644→    """Get session history + daily stats from database"""
+   645→   645→    try:
+   646→   646→        return jsonify({
+   647→   647→            "history": db.get_history(30),
+   648→   648→            "stats": db.get_daily_stats()
+   649→   649→        })
+   650→   650→    except Exception as e:
+   651→   651→        return jsonify({"history": [], "stats": {"total_sessions": 0, "total_count": 0}, "error": str(e)})
+   652→   652→
+   653→   653→
+   654→   654→@app.route("/api/history/<int:session_id>", methods=["DELETE"])
+   655→   655→def delete_history_api(session_id):
+   656→   656→    """Hapus sesi dari riwayat + file Excel terkait (jika ada)"""
+   657→   657→    guarded = _pin_guard()
+   658→   658→    if guarded:
+   659→   659→        return guarded
+   660→   660→    try:
+   661→   661→        file_name = db.delete_session(session_id)
+   662→   662→        if file_name is None:
+   663→   663→            return jsonify({"status": "error", "message": "session not found"}), 404
+   664→   664→
+   665→   665→        removed_file = False
+   666→   666→        if file_name:
+   667→   667→            # file_name disimpan relatif terhadap folder exports
+   668→   668→            safe = os.path.basename(file_name)
+   669→   669→            path = os.path.join(excel_exporter.exports_dir, safe)
+   670→   670→            if os.path.isfile(path):
+   671→   671→                os.remove(path)
+   672→   672→                removed_file = True
+   673→   673→                print(f"[DB] Removed export file: {safe}")
+   674→   674→        return jsonify({"status": "deleted", "id": session_id, "file_removed": removed_file})
+   675→   675→    except Exception as e:
+   676→   676→        return jsonify({"status": "error", "message": str(e)}), 500
+   677→   677→
+   678→   678→
+   679→   679→@app.route("/api/history/<int:session_id>")
+   680→   680→def session_detail_api(session_id):
+   681→   681→    """Detail satu sesi (untuk dialog detail di frontend)"""
+   682→   682→    try:
+   683→   683→        s = db.get_session(session_id)
+   684→   684→        if not s:
+   685→   685→            return jsonify({"error": "session not found"}), 404
+   686→   686→        return jsonify(s)
+   687→   687→    except Exception as e:
+   688→   688→        return jsonify({"error": str(e)}), 500
+   689→   689→
+   690→   690→# =====================================================
+   691→   691→# OPERATOR PIN (proteksi aksi destruktif)
+   692→   692→# =====================================================
+   693→   693→
+   694→   694→def _pin_guard():
+   695→   695→    """Return None bila aksi diizinkan, atau (response, 401) bila PIN dibutuhkan.
+   696→   696→
+   697→   697→    Frontend mengirim header 'X-Operator-Pin' pada semua request mutasi.
+   698→   698→    Bila PIN_ENABLED=false, semua mutasi bebas (mode praktik/demo).
+   699→   699→    """
+   700→   700→    if not Config.PIN_ENABLED:
+   701→   701→        return None
+   702→   702→    pin = request.headers.get("X-Operator-Pin", "")
+   703→   703→    if pin and pin == str(Config.OPERATOR_PIN):
+   704→   704→        return None
+   705→   705→    return jsonify({"error": "pin_required"}), 401
+   706→   706→
+   707→   707→
+   708→   708→@app.route("/api/pin", methods=["GET"])
+   709→   709→def api_pin_status():
+   710→   710→    """Status proteksi PIN untuk UI (tanpa membocorkan PIN itu sendiri)"""
+   711→   711→    return jsonify({
+   712→   712→        "enabled": bool(Config.PIN_ENABLED),
+   713→   713→        "is_default": str(Config.OPERATOR_PIN) == "1234",
+   714→   714→    })
+   715→   715→
+   716→   716→
+   717→   717→@app.route("/api/pin/verify", methods=["POST"])
+   718→   718→def api_pin_verify():
+   719→   719→    """Verifikasi PIN untuk membuka gate di frontend"""
+   720→   720→    data = request.get_json(silent=True) or {}
+   721→   721→    pin = str(data.get("pin", ""))
+   722→   722→    if pin and pin == str(Config.OPERATOR_PIN):
+   723→   723→        return jsonify({"valid": True})
+   724→   724→    return jsonify({"valid": False, "error": "pin_required"}), 401
+   725→   725→
+   726→   726→
+   727→   727→@app.route("/api/pin", methods=["POST"])
+   728→   728→def api_pin_update():
+   729→   729→    """Ubah PIN dan/atau aktif/nonaktifkan proteksi.
+   730→   730→    Wajib menyertakan current_pin yang benar (kecuali proteksi belum pernah
+   731→   731→    dikonfigurasi — tetap wajib demi keamanan)."""
+   732→   732→    data = request.get_json(silent=True) or {}
+   733→   733→    current = str(data.get("current_pin", ""))
+   734→   734→    if current != str(Config.OPERATOR_PIN):
+   735→   735→        return jsonify({"status": "error", "message": "PIN saat ini salah"}), 403
+   736→   736→
+   737→   737→    new_pin = data.get("new_pin")
+   738→   738→    if new_pin is not None:
+   739→   739→        new_pin = str(new_pin).strip()
+   740→   740→        if not re.fullmatch(r"\d{4,8}", new_pin):
+   741→   741→            return jsonify({"status": "error", "message": "PIN harus 4-8 digit angka"}), 400
+   742→   742→        Config.OPERATOR_PIN = new_pin
+   743→   743→
+   744→   744→    if "enabled" in data:
+   745→   745→        Config.PIN_ENABLED = bool(data.get("enabled"))
+   746→   746→
+   747→   747→    _update_env_file({
+   748→   748→        "OPERATOR_PIN": Config.OPERATOR_PIN,
+   749→   749→        "PIN_ENABLED": "true" if Config.PIN_ENABLED else "false",
+   750→   750→    })
+   751→   751→    print(f"[PIN] Updated (enabled={Config.PIN_ENABLED})")
+   752→   752→    return jsonify({"status": "ok", "enabled": bool(Config.PIN_ENABLED)})
+   753→   753→
+   754→   754→
+   755→   755→# =====================================================
+   756→   756→# REST SESSION CONTROL (untuk frontend Next.js via gateway)
+
+[showing lines 57-756 of 1614; use offset=757 with limit to continue reading]
