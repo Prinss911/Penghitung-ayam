@@ -30,7 +30,10 @@ export interface Stats {
   method: string;
   is_processing?: boolean;
   frame?: number;
-  /** Ringkasan sesi terakhir (tersedia setelah stop, count sudah di-reset backend) */
+  /** Target harian dari backend (0 = tanpa target) — fitur ronde 8 */
+  target?: number;
+  /** Ringkasan sesi terakhir (tersedia setelah stop, count sudah di-reset backend;
+   *  ronde 8: persisten di DB → bertahan setelah restart backend) */
   last_session?: LastSession | null;
 }
 
@@ -49,6 +52,20 @@ export interface AuditEntry {
   ts: string;
   action: string;
   detail: string;
+}
+
+/** Respons log aktivitas + filter/paginasi (ronde 8) */
+export interface AuditLogResponse {
+  entries: AuditEntry[];
+  /** Total entri yang cocok dgn filter aktif (bukan hanya halaman ini) */
+  total: number;
+  /** Daftar jenis aksi unik + jumlah kemunculannya (untuk dropdown filter) */
+  actions: AuditActionCount[];
+}
+
+export interface AuditActionCount {
+  action: string;
+  n: number;
 }
 
 /** Preset sumber kamera tersimpan (fitur ronde 7) */
@@ -256,11 +273,59 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
 export const ayamApi = {
   getStats: () => jsonFetch<Stats>(bp("/api/stats")),
 
-  /** Log aktivitas operator (terbaru dulu) */
-  getAuditLog: (limit = 100) =>
-    jsonFetch<{ entries: AuditEntry[] }>(
-      bp(`/api/audit?limit=${Math.min(500, Math.max(1, limit))}`)
-    ),
+
+  /** Log aktivitas operator (terbaru dulu) + filter aksi + paginasi (ronde 8) */
+  getAuditLog: (limit = 50, offset = 0, action?: string) => {
+    const q = new URLSearchParams({
+      limit: String(Math.min(500, Math.max(1, limit))),
+      offset: String(Math.max(0, offset)),
+    });
+    if (action) q.set("action", action);
+    return jsonFetch<AuditLogResponse>(bp(`/api/audit?${q.toString()}`));
+  },
+
+  /** Unduh log aktivitas sebagai CSV (PIN required di backend).
+   *  Fetch blob dgn header PIN lalu simpan via anchor sementara. */
+  downloadAuditCsv: async (action?: string) => {
+    const q = action ? `?action=${encodeURIComponent(action)}` : "";
+    const res = await fetch(bp(`/api/audit/export${q}`), {
+      cache: "no-store",
+      headers: pinHeaders(),
+    });
+    if (!res.ok) {
+      if (res.status === 401) {
+        const body = await safeJson(res);
+        if (body && body["error"] === "pin_required") {
+          requestPinUnlock();
+          throw new PinRequiredError();
+        }
+      }
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const blob = await res.blob();
+    // Ambil filename dari Content-Disposition bila ada
+    const cd = res.headers.get("Content-Disposition") ?? "";
+    const m = cd.match(/filename\*?=(?:"?)([^";]+)/i);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = m?.[1] ?? "log_aktivitas.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  },
+
+  /** Target harian (ronde 8) */
+  getTarget: () => jsonFetch<{ target: number }>(bp("/api/target")),
+
+  /** Simpan target harian (PIN required) — 0 berarti tanpa target */
+  setTarget: (target: number) =>
+    jsonFetch<{ status: string; target: number }>(bp("/api/target"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target }),
+    }),
 
   /** Bersihkan seluruh log aktivitas (PIN required) */
   clearAuditLog: () =>

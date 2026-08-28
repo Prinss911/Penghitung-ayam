@@ -37,6 +37,7 @@ import {
   Info,
   Loader2,
   Minus,
+  Pencil,
   Play,
   Plus,
   RotateCcw,
@@ -46,6 +47,7 @@ import {
   SignalHigh,
   SignalZero,
   Square,
+  Target,
   Timer,
   Trash2,
 } from "lucide-react";
@@ -67,6 +69,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -122,6 +131,7 @@ function StatCard({
   accent,
   glow,
   accentLine,
+  delay = 0,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
@@ -131,36 +141,46 @@ function StatCard({
   glow: string;
   /** Gradasi garis aksen tipis di tepi atas kartu (per warna) */
   accentLine: string;
+  /** Delay animasi masuk (stagger antar kartu, ronde 8) */
+  delay?: number;
 }) {
   return (
-    <Card
-      className={`group relative overflow-hidden border-zinc-800 bg-zinc-900/60 transition-all duration-300 hover:-translate-y-0.5 hover:border-zinc-700 ${glow}`}
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.32, delay, ease: "easeOut" }}
+      className="min-w-0"
     >
-      {/* garis aksen warna per kartu (ronde 7) */}
-      <div
-        aria-hidden
-        className={`pointer-events-none absolute inset-x-0 top-0 h-[2px] opacity-70 transition-opacity duration-300 group-hover:opacity-100 ${accentLine}`}
-      />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-zinc-600 to-transparent" />
-      <CardContent className="p-4 sm:p-5">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-              {label}
-            </p>
-            <p className="mt-1.5 truncate text-2xl font-bold tabular-nums text-zinc-50 sm:text-3xl">
-              {value}
-            </p>
-            {sub ? <div className="mt-1 text-xs text-zinc-500">{sub}</div> : null}
+      <Card
+        className={`group relative overflow-hidden border-zinc-800 bg-zinc-900/60 transition-all duration-300 hover:-translate-y-0.5 hover:border-zinc-700 ${glow}`}
+      >
+        {/* garis aksen warna per kartu (ronde 7) */}
+        <div
+          aria-hidden
+          className={`pointer-events-none absolute inset-x-0 top-0 h-[2px] opacity-70 transition-opacity duration-300 group-hover:opacity-100 ${accentLine}`}
+        />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-zinc-600 to-transparent" />
+        <CardContent className="p-4 sm:p-5">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 sm:text-[11px]">
+                {label}
+              </p>
+              {/* ronde 8: ukuran responsif — tidak lagi terpotong di layar 390px */}
+              <p className="mt-1.5 truncate text-xl font-bold tabular-nums text-zinc-50 sm:text-2xl md:text-3xl">
+                {value}
+              </p>
+              {sub ? <div className="mt-1 text-xs text-zinc-500">{sub}</div> : null}
+            </div>
+            <div
+              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-transform duration-300 group-hover:scale-110 sm:h-10 sm:w-10 ${accent}`}
+            >
+              <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
+            </div>
           </div>
-          <div
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-transform duration-300 group-hover:scale-110 ${accent}`}
-          >
-            <Icon className="h-5 w-5" />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </motion.div>
   );
 }
 
@@ -269,6 +289,12 @@ export default function AyamCounterPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<HistoryItem | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+
+  // ----- target harian (ronde 8) -----
+  const [targetOpen, setTargetOpen] = useState(false);
+  const [targetInput, setTargetInput] = useState("");
+  const [targetBusy, setTargetBusy] = useState(false);
+  const targetCelebratedRef = useRef("");
 
   // ----- PIN gate (aksi terproteksi) -----
   const [pinGateOpen, setPinGateOpen] = useState(false);
@@ -620,8 +646,58 @@ export default function AyamCounterPage() {
     setDetailOpen(true);
   }, []);
 
+  // ----- target harian: buka dialog + simpan (ronde 8) -----
+  const openTargetDialog = useCallback(() => {
+    setTargetInput(stats.target ? String(stats.target) : "");
+    setTargetOpen(true);
+  }, [stats.target]);
+
+  const handleSaveTarget = useCallback(async () => {
+    const raw = targetInput.trim().replace(/[^0-9]/g, "");
+    const n = raw === "" ? 0 : Number(raw);
+    if (!Number.isInteger(n) || n < 0 || n > 1_000_000) {
+      toast.error(t.targetGagal);
+      return;
+    }
+    setTargetBusy(true);
+    try {
+      const res = await ayamApi.setTarget(n);
+      toast.success(t.targetTersimpan, {
+        description:
+          res.target > 0
+            ? `${t.targetHarian}: ${res.target.toLocaleString()} ${lang === "id" ? "ayam/hari" : "chickens/day"}`
+            : t.targetTanpa,
+      });
+      setTargetOpen(false);
+      refreshStats();
+    } catch (e) {
+      if (e instanceof PinRequiredError) return; // gate global sudah terbuka via event
+      toast.error(t.targetGagal);
+    } finally {
+      setTargetBusy(false);
+    }
+  }, [targetInput, t, lang, refreshStats]);
+
   // ----- derived -----
   const daily = history.stats;
+
+  // ----- target harian: progres hari ini (ronde 8) -----
+  const target = stats.target ?? 0;
+  const todayCount = daily.total_count ?? 0;
+  const targetPct =
+    target > 0 ? Math.min(100, Math.round((todayCount / target) * 100)) : 0;
+
+  // Toast sekali per (hari, target) bila target tercapai
+  useEffect(() => {
+    if (target <= 0 || todayCount < target) return;
+    const key = `${new Date().toDateString()}-${target}`;
+    if (targetCelebratedRef.current === key) return;
+    targetCelebratedRef.current = key;
+    toast.success(t.targetTercapai, {
+      description: `${todayCount.toLocaleString()} / ${target.toLocaleString()} — ${targetPct}%`,
+    });
+    playBeep();
+  }, [todayCount, target, targetPct, t, playBeep]);
 
   const weeklyData = useMemo(() => {
     const map = new Map<string, number>();
@@ -675,23 +751,8 @@ export default function AyamCounterPage() {
 
   return (
     <div className="relative flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
-      {/* ==== Background depth: glow atas + grid halus ==== */}
-      <div
-        aria-hidden
-        className="pointer-events-none fixed inset-0 z-0"
-        style={{
-          background:
-            "radial-gradient(900px 380px at 18% -8%, rgba(245,158,11,0.07), transparent 62%)," +
-            "radial-gradient(760px 340px at 88% -6%, rgba(16,185,129,0.05), transparent 60%)," +
-            "linear-gradient(to bottom, rgba(255,255,255,0.02) 1px, transparent 1px)," +
-            "linear-gradient(to right, rgba(255,255,255,0.02) 1px, transparent 1px)",
-          backgroundSize: "auto, auto, 34px 34px, 34px 34px",
-          maskImage:
-            "linear-gradient(to bottom, black 0%, black 55%, transparent 96%)",
-          WebkitMaskImage:
-            "linear-gradient(to bottom, black 0%, black 55%, transparent 96%)",
-        }}
-      />
+      {/* ==== Background depth: glow atas + grid halus (ronde 8: class agar light mode juga terlihat) ==== */}
+      <div aria-hidden className="ayam-bg-layer pointer-events-none fixed inset-0 z-0" />
 
       {/* ================= HEADER ================= */}
       <header className="sticky top-0 z-50 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur supports-[backdrop-filter]:bg-zinc-950/60">
@@ -777,6 +838,7 @@ export default function AyamCounterPage() {
         >
           <StatCard
             icon={Bird}
+            delay={0}
             label={t.totalAyam}
             value={
               <AnimatedNumber
@@ -812,6 +874,7 @@ export default function AyamCounterPage() {
           />
           <StatCard
             icon={ScanEye}
+            delay={0.06}
             label={t.objekDiFrame}
             value={stats.tracks.toLocaleString(lang === "id" ? "id-ID" : "en-US")}
             sub={
@@ -825,6 +888,7 @@ export default function AyamCounterPage() {
           />
           <StatCard
             icon={Gauge}
+            delay={0.12}
             label={t.statusSession}
             value={
               sessionActive ? (
@@ -844,6 +908,7 @@ export default function AyamCounterPage() {
           />
           <StatCard
             icon={Cpu}
+            delay={0.18}
             label={t.backend}
             value={device ? device.backend.toUpperCase() : "…"}
             sub={
@@ -1223,6 +1288,82 @@ export default function AyamCounterPage() {
               </div>
             </CardHeader>
             <CardContent>
+              {/* ---- Target harian: progres hari ini (ronde 8) ---- */}
+              <div
+                className="mb-3 rounded-lg border border-zinc-800/80 bg-zinc-900/40 p-3 transition-colors hover:border-zinc-700/80"
+                role="group"
+                aria-label={t.targetHarian}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <Target className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+                    <span className="truncate text-xs font-semibold text-zinc-300">
+                      {t.targetHarian}
+                    </span>
+                    {targetPct >= 100 ? (
+                      <Badge
+                        variant="outline"
+                        className="border-emerald-900 bg-emerald-950 px-1.5 py-0 text-[9px] font-bold uppercase text-emerald-400"
+                      >
+                        ✓ 100%
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <span
+                      className={`font-mono text-[11px] ${
+                        targetPct >= 100
+                          ? "text-emerald-400"
+                          : "text-zinc-400"
+                      }`}
+                    >
+                      {target > 0
+                        ? `${todayCount.toLocaleString(lang === "id" ? "id-ID" : "en-US")} / ${target.toLocaleString()} · ${targetPct}%`
+                        : t.targetTanpa}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={openTargetDialog}
+                      title={t.targetAtur}
+                      aria-label={t.targetAtur}
+                      className="h-6 gap-1 px-1.5 text-[10px] text-zinc-500 hover:bg-amber-950/50 hover:text-amber-400"
+                    >
+                      <Pencil className="h-2.5 w-2.5" />
+                      {t.targetAtur}
+                    </Button>
+                  </div>
+                </div>
+                {target > 0 ? (
+                  <div
+                    className="relative mt-2 h-2 overflow-hidden rounded-full bg-zinc-800"
+                    role="progressbar"
+                    aria-valuenow={targetPct}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label={t.targetHarian}
+                  >
+                    <motion.div
+                      className={`relative h-full overflow-hidden rounded-full ${
+                        targetPct >= 100
+                          ? "bg-gradient-to-r from-emerald-600 to-emerald-400"
+                          : "bg-gradient-to-r from-amber-600 to-amber-400"
+                      }`}
+                      initial={false}
+                      animate={{ width: `${targetPct}%` }}
+                      transition={{ type: "spring", stiffness: 80, damping: 20 }}
+                    >
+                      {/* kilau halus bergerak di dalam bar terisi (ronde 8) */}
+                      {targetPct > 4 && targetPct < 100 ? (
+                        <span
+                          aria-hidden
+                          className="ayam-target-shine pointer-events-none absolute inset-y-0 left-0 w-full"
+                        />
+                      ) : null}
+                    </motion.div>
+                  </div>
+                ) : null}
+              </div>
               <div className="h-44 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={weeklyData} margin={{ top: 14, right: 8, left: -18, bottom: 0 }}>
@@ -1705,6 +1846,74 @@ export default function AyamCounterPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ================= DIALOG TARGET HARIAN (ronde 8) ================= */}
+      <Dialog open={targetOpen} onOpenChange={setTargetOpen}>
+        <DialogContent className="border-zinc-800 bg-zinc-950 text-zinc-100 sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/15 text-amber-400">
+                <Target className="h-4 w-4" />
+              </span>
+              {t.targetAtur}
+            </DialogTitle>
+            <DialogDescription>{t.targetHarianDesc}</DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleSaveTarget();
+            }}
+            className="space-y-3"
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor="target-input" className="text-xs text-zinc-400">
+                {t.targetLabel}
+              </Label>
+              <Input
+                id="target-input"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder={t.targetTanpa}
+                value={targetInput}
+                onChange={(e) => setTargetInput(e.target.value.replace(/[^0-9]/g, ""))}
+                disabled={targetBusy}
+                className="border-zinc-800 bg-zinc-900 font-mono tabular-nums text-zinc-100 placeholder:text-zinc-600 focus-visible:ring-amber-500/40"
+              />
+              <p className="text-[11px] text-zinc-600">
+                0 = {t.targetTanpa} · maks 1.000.000
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={targetBusy}
+                onClick={() => setTargetOpen(false)}
+                className="border-zinc-800 bg-transparent text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100"
+              >
+                {t.batalkan}
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={targetBusy}
+                className="bg-amber-500 font-semibold text-zinc-950 hover:bg-amber-400"
+              >
+                {targetBusy ? (
+                  <>
+                    <div className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border-2 border-zinc-900/40 border-t-zinc-900" />
+                    {t.logMemuat}
+                  </>
+                ) : (
+                  t.simpan
+                )}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* ================= FOOTER (sticky bottom) ================= */}
       <footer className="relative z-10 mt-auto border-t border-zinc-800 bg-zinc-950 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] pt-4">

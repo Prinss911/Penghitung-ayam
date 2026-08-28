@@ -367,3 +367,68 @@ Rekomendasi ronde berikutnya (prioritas):
 3. Filter/pencarian di Log Aktivitas (by action type) + paginasi bila entri > 150.
 4. Export log aktivitas ke CSV/PDF untuk audit kepatuhan.
 5. Per-IP rate limiting (remote_addr) bila nanti multi-terminal.
+
+---
+Task ID: 8-a
+Agent: Z.ai Code (backend subagent)
+Date: 2026-08-28
+Task: Backend ronde 8 — persist last_session antar restart (tabel app_state), filter + paginasi + export CSV log aktivitas, target harian (TARGET_HARIAN) dengan persist .env.
+
+Work Log:
+- Baca worklog ronde 6-7 (7-a) + app.py (2010 baris) / database.py / config.py / .env / start.sh. Proses lama di-stop (ditemukan 2 proses: PID 24987 dari ronde 7 + orphan 31354; supervisor next-server otomatis me-respawn backend saat mati — 2x percobaan start.sh kalah race bind port 5000, aman karena kode sama; state akhir: backend sehat via respawn supervisor). py_compile OK (app.py, database.py, config.py), LF endings dipertahankan, verifikasi lengkap via curl :5000.
+- database.py: tabel baru app_state (key TEXT PRIMARY KEY, value TEXT) di init_db(); metode get_state (default None saat absen/error), set_state (upsert ON CONFLICT), delete_state — semuanya try/except + print, tak pernah melempar exception. Extend get_audit_log(limit=100, offset=0, action=None) → WHERE action = ? + LIMIT ? OFFSET ?; metode baru get_audit_total(action) (COUNT terfilter) & get_audit_actions() (GROUP BY action ORDER BY n DESC → [{action, n}]).
+- app.py TASK 1 PERSIST last_session: _do_stop_session() setelah set last_session_summary/last_session_timeline → db.set_state("last_session", json.dumps({summary, timeline: points})) (try/except, tak pernah gagalkan stop). Fungsi baru _restore_last_session() (baca app_state, parse JSON, set 2 global; JSON invalid → biarkan None) dipanggil di __main__ SEBELUM start_threads() dengan print "[STARTUP] Restored last_session from DB (total=N, N timeline points)". _do_start_session() & /api/reset → db.delete_state("last_session") saat globals dikosongkan.
+- app.py TASK 2 AUDIT: GET /api/audit kini terima ?limit (clamp 1..500), ?offset (>=0), ?action → response {"entries", "total", "actions"}. Endpoint baru GET /api/audit/export (PIN via _pin_guard, ?action opsional): csv.writer ke io.StringIO, header id,ts,action,detail, prepend BOM "\ufeff", mimetype text/csv, Content-Disposition attachment filename="log_aktivitas_YYYYMMDD_HHMMSS.csv", setelah guard sukses _audit("audit_export", "{n} rows"). Flask route /api/audit vs /api/audit/export GET keduanya OK.
+- app.py TASK 3 TARGET HARIAN: config.py Config.TARGET_HARIAN = int(os.getenv('TARGET_HARIAN','0')) dibungkus try/except default 0; .env + TARGET_HARIAN=250. Endpoint GET /api/target (tanpa PIN, {"target": Config.TARGET_HARIAN}) & POST /api/target (PIN; validasi int 0..1000000, selain itu 400 {"error":"invalid_target"}; set Config + persist _update_env_file + _audit("target")). /api/stats (REST get_stats) & payload socketio "update_stats" di detection_thread masing-masing + kunci "target" (get_stats_socket ikut +1 kunci demi konsistensi — non-breaking).
+
+VERIFIKASI (curl, semua OK):
+- audit: ?limit=2 → 2 entri + total=26 (int) + actions (10 jenis dgn n); ?limit=5&action=pin_verify_ok → hanya 3 entri aksi itu; ?limit=2&offset=2 → id [25,24] ≠ offset=0 [27,26].
+- export: tanpa PIN → 401 {"error":"pin_required"}; dgn X-Operator-Pin:1234 → CSV header id,ts,action,detail, byte BOM EF BB BF terkonfirmasi (od), Content-Type text/csv + filename="log_aktivitas_20260828_223427.csv"; ?action=pin_verify_ok → 3 baris terfilter.
+- target: GET → {"target":250}; POST 300 tanpa PIN → 401; dgn PIN → {"status":"ok","target":300}; GET → 300; .env TARGET_HARIAN=300; invalid (-5, "abc", 2000000) → 400 invalid_target; POST balik 250 → .env kembali 250.
+- E2E persist: start "QA R8 Persist" (PIN) → 15s → count 2→4 → stop (total=4, durasi 22.6s) → stats.last_session total=4; app_state berisi row last_session; RESTART backend (proses baru PID 32338) → log "[STARTUP] Restored last_session from DB (total=4, 4 timeline points)" → GET /api/stats MASIH last_session sama (total=4, QA R8 Persist) → /api/timeline 4 poin saat inactive → POST /api/reset (PIN) → last_session null + timeline [] + app_state KOSONG.
+- Cleanup: history #21 QA R8 Persist dihapus via DELETE (file_removed:true), 0 baris QA tersisa (6 sesi demo tetap).
+
+Stage Summary:
+- Backend v2.8 (ronde 8): 3 fitur — last_session persist ke SQLite tabel app_state (kartu "Sesi terakhir" + grafik bertahan restart backend; fix catatan risiko ronde 7), log aktivitas dgn filter aksi + paginasi + total + daftar aksi + export CSV Excel-friendly (BOM) terproteksi PIN, target harian yang bisa diubah runtime + persist .env + ter-export di stats/socket.
+- Endpoint baru/berubah: GET /api/audit (+offset/action/total/actions), GET /api/audit/export (PIN, CSV), GET+POST /api/target, /api/stats & socket update_stats (+target). database.py: +tabel app_state, +3 metode state, get_audit_log extended, +get_audit_total, +get_audit_actions.
+- .env kini: CAMERA_SOURCE, CONFIDENCE_THRESHOLD=0.25, COUNT_LINE_POSITION=112, ZONE_WIDTH=100, OPERATOR_PIN=1234, PIN_ENABLED=true, TARGET_HARIAN=250.
+- Catatan infrastruktur: backend otomatis di-respawn oleh proses next-server saat mati (supervisor di sisi frontend dev) — start.sh manual bisa kalah race bind port; hasil akhir tetap 1 proses sehat dgn kode baru. Layak diketahui main agent bila nanti mengelola restart manual.
+- Backend RUNNING sehat (PID 32338, python3 -m app.app, 127.0.0.1:5000), py_compile OK, LF endings, semua endpoint 200.
+
+
+---
+Task ID: 8 (frontend + integrasi + QA)
+Agent: Z.ai Code (main)
+Date: 2026-08-28
+Task: Ronde 8 — QA berkala via agent-browser, lalu: filter+paginasi+CSV di Log Aktivitas, fitur Target Harian (backend 8-a + UI), persistensi last_session, styling polish (mobile fix, light mode fix, animasi).
+
+Work Log:
+- QA awal: Next :3000 & Flask :5000 sehat (model loaded, FPS 8), dashboard render bersih 0 console error. Ditemukan: StatCard nilai "Nonaktif" terpotong jadi "Non..." di 390px (mobile bug). Status v2.7 stabil → lanjut fitur ronde 8 sesuai rekomendasi ronde 7 (#2 persist last_session, #3 filter log, #4 export log).
+- BACKEND (Task 8-a, subagent — entri lengkap di atas): last_session persist ke tabel app_state (SQL) → bertahan restart backend; /api/audit +offset/+action/+total/+actions (daftar aksi unik + count utk dropdown); GET /api/audit/export CSV (PIN, BOM UTF-8, filter ikut `action`); TARGET_HARIAN di .env + GET/POST /api/target (POST PIN-protected, audit "target"); /api/stats & socket payload +key target. Semua diverifikasi curl + E2E persist (start→stop→restart→last_session tetap→reset→bersih).
+- next.config.ts: rewrite baru /api/audit/:path* (untuk export CSV) & /api/target.
+- api.ts: AuditLogResponse/AuditActionCount types; getAuditLog(limit, offset, action?); downloadAuditCsv(action?) — fetch blob + header PIN + filename dari Content-Disposition + anchor sementara; getTarget/setTarget; Stats +target?.
+- i18n.ts: ~20 kunci baru ID/EN (logFilterSemua, logMuatLagi, logUnduhCsv, logCsv*, logMemuat, logEntri, targetHarian + 10 kunci target*, aksiTarget, aksiAuditExport, simpan).
+- audit-log-dialog.tsx v2: Select filter per jenis aksi (ikon+warna per aksi + count), paginasi 50/halaman tombol "Muat lebih banyak (x/total)", tombol "Unduh CSV" (ikut filter, PIN-aware via PinRequiredError→gate global), badge total entri terfilter, empty-state menyesuaikan filter, ACTION_META +audit_export/+target, meta untuk aksi baru. Toolbar flex-wrap (fix overflow 390px — sebelumnya "Unduh CSV"/"Bersihkan log" terpotong).
+- TARGET HARIAN UI (page.tsx): blok progress di kartu Ringkasan 7 Hari — label + nilai "247 / 250 · 99%" + tombol "Atur target" + progress bar gradasi amber (emerald saat ≥100% + badge "✓ 100%") + shine animation di dalam bar terisi (hanya 4<pct<100); Dialog edit (input numeric, 0=tanpa target, maks 1jt, PIN-protected; PinRequiredError→gate global terbuka, simpan→toast+refreshStats); toast perayaan "Target harian tercapai!" sekali per (hari, target) + beep.
+- STYLING: StatCard responsive (value text-xl sm:text-2xl md:text-3xl, ikon h-8/w-8 di mobile) — fix "Nonaktif" terpotong; entrance stagger per kartu (motion.div delay 0/.06/.12/.18); background depth pindah inline-style → class .ayam-bg-layer + override html.light (grid kini terlihat di light mode — fix catatan kosmetik ronde 6); FIX LATENT: html membawa class "dark light" sekaligus → var semantik (--foreground/--card-foreground/--popover-foreground) tetap putih di light mode; kini dioverride di html.light → CardTitle kontras benar; hint dialog target dipertegas ("0 = Tanpa target · maks 1.000.000").
+- VERIFIKASI E2E (agent-browser): 0 console error; target 230/250 · 92% tampil → ubah 200 via dialog → UI "✓ 100%" emerald + toast tercapai → kembali 250 (247/250 · 99% setelah sesi baru); audit: 65 entri → load more 50→65 (tombol jadi "65/65 entri") → filter "PIN salah" 7 entri + badge 7 → CSV unduh (toast sukses + audit backend "audit_export 7 rows") → "Ekspor CSV log" label benar (setelah tambah kunci aksiAuditExport); PIN gate muncul saat browser session baru coba POST (401→gate→1234→lanjut) — rantai proteksi utuh; last_session UI: sesi "Farm Sukabumi 02" start via UI → 17 ayam → stop → kartu amber "Sesi terakhir: Farm Sukabumi 02 · 17 ayam" → BACKEND DIKILL+respawn → reload → kartu TETAP menampilkan sesi tsb + grafik tren kumulatif sesi terakhir (76s) kembali (persistensi timeline OK); mobile 390px: stat card "Nonaktif" utuh, dialog audit muat (toolbar wrap), EN penuh (Daily Target/Set target/Download CSV), light mode: grid + judul kontras + progress bar OK.
+- bun run lint → 0 error (beberapa kali). Lahan data: 28 entri audit "QA Paging" (preset save/delete pair) SENGAJA dibiarkan — demo filter; sesi "Farm Sukabumi 02" (17 ayam) disengaja tetap di riwayat agar kartu Sesi terakhir & grafik berisi; .env TARGET_HARIAN=250.
+
+Stage Summary:
+- Dashboard v2.8 + Backend v2.8: Log Aktivitas kini bisa difilter per aksi, dipaginasi, dan diekspor CSV; Target Harian (persist .env, progres realtime vs total hari ini, perayaan saat tercapai); last_session & timeline persisten lintas restart backend; deretan polish styling (mobile stat card, light mode benar-benar kontras, grid terlihat, stagger animasi, shine progress).
+- 3 rekomendasi ronde 7 tuntas (#2 persist last_session, #3 filter+paginasi, #4 export CSV — CSV bukan PDF).
+- File berubah: next.config.ts, api.ts, i18n.ts, audit-log-dialog.tsx, page.tsx, globals.css + backend (app.py, database.py, config.py, .env).
+
+Risiko / catatan:
+- Toast perayaan target memakai ref in-memory → muncul lagi jika halaman di-reload di hari yang sama dengan target sama (sekali per mount, bukan sekali per hari lintas reload).
+- audit_export memakai format CSV; PDF belum (rekomendasi ronde 7 #4 menyebut CSV/PDF — CSV dipilih: lebih ringan untuk log).
+- QA Paging preset entries (28) menambah noise di audit log — gunakan tombol Bersihkan log bila ingin bersih.
+- Theme toggle hanya menambah class 'light' tanpa menghapus 'dark' (html bisa "dark light") — kini aman karena override semantik di html.light lebih spesifik; membersihkan toggle bisa jadi ronde berikutnya.
+- Upload video besar (rekomendasi #1 ronde 7, terbuka sejak ronde 5) masih belum diuji.
+
+Rekomendasi ronde berikutnya (prioritas):
+1. Uji upload video besar (100-300 MB) + indikator "menyiapkan video" saat switch sumber (terbuka sejak ronde 5).
+2. Tanggal/histori target harian per hari (riwayat pencapaian target mingguan) + grafik garis target di Ringkasan.
+3. Bersihkan ThemeToggle (hapus class 'dark' saat light) + audit rotasi otomatis (mis. keep 500 terakhir).
+4. Notifikasi browser saat target tercapai (selaras milestone notif yang sudah ada).
+5. Halaman/perset multi-kamera sudah ada — tambah test koneksi RTSP sebelum apply preset.
