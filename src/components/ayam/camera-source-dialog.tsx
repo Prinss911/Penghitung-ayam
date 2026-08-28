@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, CloudUpload, Loader2, RadioTower, Video, Webcam } from "lucide-react";
+import { Check, CloudUpload, Loader2, RadioTower, Trash2, Video, Webcam } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -20,6 +20,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -57,6 +67,8 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
   const [uploading, setUploading] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
   const [dragOver, setDragOver] = useState(false);
+  const [deleteVideoName, setDeleteVideoName] = useState<string | null>(null);
+  const [deleteVideoBusy, setDeleteVideoBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -103,6 +115,24 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
   );
 
   const current = info?.source ?? "";
+
+  const handleDeleteVideo = useCallback(async () => {
+    if (!deleteVideoName) return;
+    setDeleteVideoBusy(true);
+    try {
+      const res = await ayamApi.deleteCameraVideo(deleteVideoName);
+      toast.success(t.videoDihapus, { description: res.deleted });
+      setDeleteVideoName(null);
+      await load();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      toast.error(t.gagalHapusVideo, {
+        description: msg.includes("400") ? t.videoAktifWarning : undefined,
+      });
+    } finally {
+      setDeleteVideoBusy(false);
+    }
+  }, [deleteVideoName, t, load]);
 
   const handleFile = useCallback(
     async (file: File | undefined | null) => {
@@ -287,13 +317,21 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
                 <div className="ayam-scroll max-h-40 space-y-1.5 overflow-y-auto pr-1">
                   {info.videos.map((v) => {
                     const active = v.path === current;
+                    const isUpload = v.name.startsWith("upload_");
                     return (
-                      <button
+                      <div
                         key={v.path}
-                        onClick={() => apply(v.path)}
-                        disabled={applying}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => !deleteVideoBusy && apply(v.path)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !deleteVideoBusy) {
+                            e.preventDefault();
+                            apply(v.path);
+                          }
+                        }}
                         title={v.path}
-                        className={`flex w-full items-center justify-between gap-2 rounded-lg border p-2.5 text-left text-xs transition-colors disabled:opacity-60 ${
+                        className={`flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border p-2.5 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
                           active
                             ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
                             : "border-zinc-800 bg-zinc-900/60 text-zinc-300 hover:border-amber-500/40 hover:bg-zinc-900"
@@ -306,12 +344,35 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
                             <Video className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
                           )}
                           <span className="truncate font-medium">{v.name}</span>
+                          {isUpload ? (
+                            <Badge
+                              variant="outline"
+                              className="shrink-0 border-violet-900 bg-violet-950/60 px-1.5 py-0 text-[9px] font-semibold uppercase text-violet-400"
+                            >
+                              {t.videoUnggahan}
+                            </Badge>
+                          ) : null}
                         </span>
                         <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-zinc-500">
                           {v.size_mb > 0 ? `${v.size_mb} MB` : ""}
+                          {isUpload ? (
+                            <button
+                              type="button"
+                              aria-label={`${t.hapusVideo}: ${v.name}`}
+                              title={t.hapusVideo}
+                              disabled={deleteVideoBusy || active}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteVideoName(v.name);
+                              }}
+                              className="rounded-md p-1 text-zinc-600 transition-colors hover:bg-red-950/60 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-30"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          ) : null}
                           {active ? <Check className="h-3.5 w-3.5 text-amber-400" /> : null}
                         </span>
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -359,6 +420,48 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
             </div>
           </div>
         )}
+
+        {/* Konfirmasi hapus video unggahan */}
+        <AlertDialog
+          open={deleteVideoName !== null}
+          onOpenChange={(o) => !o && setDeleteVideoName(null)}
+        >
+          <AlertDialogContent className="border-zinc-800 bg-zinc-950 text-zinc-100">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <Trash2 className="h-4 w-4 text-red-500" />
+                {t.hapusVideoKonfirmasi}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                <span className="block font-mono text-xs text-amber-300/90">
+                  {deleteVideoName}
+                </span>
+                {t.hapusVideoDesc}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel
+                disabled={deleteVideoBusy}
+                className="border-zinc-800 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+              >
+                {t.batalkan}
+              </AlertDialogCancel>
+              <AlertDialogAction
+                disabled={deleteVideoBusy}
+                onClick={(e) => {
+                  e.preventDefault();
+                  void handleDeleteVideo();
+                }}
+                className="bg-red-600 font-semibold text-white hover:bg-red-700"
+              >
+                {deleteVideoBusy ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : null}
+                {deleteVideoBusy ? t.menghapus : t.yaHapus}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   );

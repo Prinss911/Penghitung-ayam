@@ -193,3 +193,56 @@ Rekomendasi ronde berikutnya (prioritas):
 3. Ekspor laporan PDF harian (ringkasan sesi + grafik) — naikkan nilai produk.
 4. Autentikasi sederhana (PIN operator) sebelum mulai/stop/hapus sesi untuk produksi.
 5. Toast milestone saat sesi berjalan kini benar; pertimbangkan suara berbeda untuk koreksi manual.
+
+---
+Task ID: 5
+Agent: Z.ai Code (cron webDevReview ronde 5)
+Date: 2026-08-28
+Task: QA berkala + assessment; fokus ronde: kelola video unggahan (hapus), laporan harian PDF, kolom durasi/rata-rata di tabel riwayat, restyle grafik mingguan + polish.
+
+Work Log:
+- QA awal: semua layanan sehat (Next :3000, Flask :5000 PID baru via /api/ayam-backend), semua endpoint GET (stats/device/history/exports/timeline/camera-source/settings) → 200, dashboard render bersih TANPA error console (dark, EN persist).
+- Status v2.4 dari ronde 4 stabil → fokus fitur baru (rekomendasi ronde 4 #1 & #3).
+
+BACKEND (app/app.py + services/database.py):
+- database.py: metode baru `get_sessions_by_date(tanggal)` — semua sesi satu tanggal, urut waktu (untuk laporan).
+- `DELETE /api/camera-source/video` (JSON {name}) — hapus video unggahan. Guard berlapis: basename-only (anti traversal), WAJIB prefix `upload_`, file ada, dan TIDAK sedang aktif sebagai sumber (400 "ganti sumber dulu"). Terverifikasi semua guard via curl + real flow (upload → guard 400 → switch → delete OK, file hilang dari disk).
+- `GET /api/report/daily?date=YYYY-MM-DD` — LAPORAN HARIAN PDF via reportlab (sudah ada di venv 4.4.9):
+  • Header judul + tanggal + timestamp pembuatan
+  • Ringkasan 4 kotak amber: Total Sesi / Total Ayam / Rata-rata per Sesi / Sesi Tertinggi (nama asal)
+  • Grafik batang ayam per sesi (reportlab Drawing, label jam + nilai, maks 24 bar)
+  • Tabel detail sesi (Jam, Asal, Total, Durasi dihitung dari start/end, Keterangan) + footer
+  • Response attachment `laporan_harian_<tanggal>.pdf`. Terverifikasi: PDF 1 halaman valid (pypdf extract OK; 6 sesi 230 ayam 38.3 rata-rata puncak 129 Farm Adjust QA). Contoh: /home/z/my-project/download/laporan_harian_2026-08-28_sample.pdf
+- next.config.ts: rewrite baru `/api/report/:path*` (upload delete sudah tercakup `/api/camera-source/:path*`).
+
+FRONTEND:
+- api.ts: `deleteCameraVideo(name)`, `dailyReportUrl(date)`.
+- camera-source-dialog.tsx: video `upload_*` kini punya badge ungu "UPLOADED" + tombol trash (disabled saat video aktif); konfirmasi AlertDialog (nama file mono amber, tombol merah); error toast khusus bila video masih dipakai. Baris video di-refactor dari <button> ke div[role=button] agar tidak ada nested button (a11y). E2E terverifikasi: upload → badge → switch sumber → trash → konfirmasi → toast "Video removed" → file hilang → list refresh.
+- page.tsx (Riwayat Sesi): tombol LAPORAN HARIAN (emerald, FileText, teks hanya di ≥lg) di header — ikut filter tanggal atau hari ini; kolom baru DURASI (md+) & RATA-RATA ayam/menit (lg+, sky) dihitung dari start/end client-side, lama tanpa durasi → "—"; container tabel dapat scroll-x di layar sempit.
+- page.tsx (Ringkasan 7 Hari): restyle menyeluruh — bar gradasi AMBER untuk hari lampau + EMERALD untuk hari ini (Cell per-bar), radius 5, animasi 500ms, legenda "Sebelumnya/Hari ini" di bawah chart. (Sebelumnya: bar biru polos tanpa pembeda hari ini.)
+- i18n: 16 kunci baru ID/EN (hapusVideo*, videoUnggahan, laporanHarian*, dst).
+
+Masalah ditemui & solusi:
+- Browser mem-persist bundle parse error lama (page.tsx:1470) di dev-overlay meski file sudah benar & dev.log "✓ Compiled" — hilang setelah restart browser (agent-browser close --all) + clear .next/cache. Bukan bug kode (lint 0, runtime normal).
+
+Verifikasi akhir:
+- agent-browser: 0 console error (sesi browser baru), lint 0 error, ID/EN lengkap, mobile 390px (kolom ekstra tersembunyi, tombol report ikon-only, tabel scroll-x), download PDF via <a download> OK (3.7 KB valid).
+- Layanan sehat; data uji tetap: sesi #15 (129, timeline) sebagai demo.
+
+Stage Summary:
+- Dashboard v2.5: 3 fitur baru (kelola video unggahan + delete guard, laporan harian PDF, kolom durasi/rata-rata) + restyle grafik mingguan amber/emerald + legenda.
+- Backend: 2 endpoint baru (DELETE camera video, GET report/daily PDF) + 1 metode DB baru; semua guard teruji.
+- Operator kini bisa: unggah → pakai → hapus video demo/sendiri, dan unduh laporan harian siap-cetak per tanggal.
+
+Risiko / catatan:
+- PDF report: font Helvetica (Latin) — karakter non-Latin di keterangan akan fallback aneh; untuk sekarang OK (bahasa ID/EN).
+- Grafik batang PDF dibatasi 24 sesi pertama per tanggal (cukup untuk operasional harian).
+- Upload file besar (100-300 MB) via preview gateway belum diuji (download PDF via :3000 OK).
+- Dev-overlay browser bisa menampilkan error lama (stale) setelah HMR gagal sementara — restart browser bila ragu; cek dev.log untuk kebenaran aktual.
+
+Rekomendasi ronde berikutnya (prioritas):
+1. Autentikasi sederhana (PIN operator) untuk start/stop/hapus — sebelum dipakai produksi.
+2. Ringkasan tren per-jam pada laporan PDF (bila timeline tersimpan) — laporan makin informatif.
+3. Ekspor laporan rentang tanggal (mingguan/bulanan) dari filter riwayat.
+4. Toast suara berbeda untuk koreksi manual (bedakan dari milestone).
+5. Uji upload video besar via preview + indikator "menyiapkan video" saat capture switch.

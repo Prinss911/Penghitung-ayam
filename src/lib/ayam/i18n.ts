@@ -195,6 +195,19 @@ export const dict = {
     // Detail chart
     grafikSesi: "Grafik Kumulatif",
     grafikSesiKosong: "Tidak ada data timeline untuk sesi ini",
+    // Manage uploaded videos
+    hapusVideo: "Hapus video unggahan ini",
+    hapusVideoKonfirmasi: "Hapus video ini?",
+    hapusVideoDesc: "File video akan dihapus permanen dari server.",
+    videoDihapus: "Video terhapus dari server",
+    gagalHapusVideo: "Gagal menghapus video",
+    videoAktifWarning: "Video sedang dipakai sebagai sumber kamera",
+    videoUnggahan: "Unggahan",
+    // Daily report PDF
+    laporanHarian: "Laporan Harian",
+    laporanHarianPh: "Unduh laporan PDF sesi pada tanggal filter (atau hari ini)",
+    laporanDibuat: "Laporan PDF dibuat",
+    gagalLaporan: "Gagal membuat laporan PDF",
   },
   en: {
     appName: "Ayam Counter Pro",
@@ -377,6 +390,19 @@ export const dict = {
     // Detail chart
     grafikSesi: "Cumulative Chart",
     grafikSesiKosong: "No timeline data for this session",
+    // Manage uploaded videos
+    hapusVideo: "Delete this uploaded video",
+    hapusVideoKonfirmasi: "Delete this video?",
+    hapusVideoDesc: "The video file will be permanently removed from the server.",
+    videoDihapus: "Video removed from server",
+    gagalHapusVideo: "Failed to delete video",
+    videoAktifWarning: "Video is currently used as the camera source",
+    videoUnggahan: "Uploaded",
+    // Daily report PDF
+    laporanHarian: "Daily Report",
+    laporanHarianPh: "Download a PDF report of sessions on the filtered date (or today)",
+    laporanDibuat: "PDF report generated",
+    gagalLaporan: "Failed to generate PDF report",
   },
 } as const;
 

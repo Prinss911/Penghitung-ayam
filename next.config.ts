@@ -27,6 +27,7 @@ const FLASK_PROXY_ROUTES: Array<[string, string]> = [
   ["/api/camera-source", "/api/camera-source"],
   ["/api/camera-source/:path*", "/api/camera-source/:path*"],
   ["/api/count/adjust", "/api/count/adjust"],
+  ["/api/report/:path*", "/api/report/:path*"],
   ["/video_feed", "/video_feed"],
   ["/socket.io/", "/socket.io/"],
   ["/socket.io/:path*", "/socket.io/:path*"],

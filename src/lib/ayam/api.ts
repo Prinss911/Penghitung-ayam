@@ -200,6 +200,18 @@ export const ayamApi = {
       body: JSON.stringify({ source }),
     }),
 
+  /** Hapus video hasil unggahan (hanya upload_*) — 400 bila sedang aktif */
+  deleteCameraVideo: (name: string) =>
+    jsonFetch<{ status: string; deleted: string }>(bp("/api/camera-source/video"), {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }),
+
+  /** URL unduh laporan harian PDF (tanggal YYYY-MM-DD) */
+  dailyReportUrl: (date: string) =>
+    bp(`/api/report/daily?date=${encodeURIComponent(date)}`),
+
   /** Unggah video (multipart) → disimpan di server + langsung jadi sumber kamera.
    *  Pakai XHR agar bisa melaporkan progres unggah. */
   uploadCameraVideo: (file: File, onProgress?: (pct: number) => void) =>

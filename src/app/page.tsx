@@ -14,6 +14,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   ResponsiveContainer,
   Tooltip as ReTooltip,
   XAxis,
@@ -30,6 +31,7 @@ import {
   Download,
   FileDown,
   FileSpreadsheet,
+  FileText,
   Gauge,
   History,
   Info,
@@ -144,6 +146,18 @@ function StatCard({
       </CardContent>
     </Card>
   );
+}
+
+// Format durasi "Xj Ym Zs" / "Ym Zs" / "Zs" dari detik
+function fmtDur(secs: number): string {
+  if (!Number.isFinite(secs) || secs <= 0) return "—";
+  const s = Math.round(secs);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${ss.toString().padStart(2, "0")}s`;
+  return `${ss}s`;
 }
 
 function ConnBadge({ mode, t }: { mode: string; t: (typeof dict)[Lang] }) {
@@ -1086,11 +1100,15 @@ export default function AyamCounterPage() {
             <CardContent>
               <div className="h-44 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={weeklyData} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+                  <BarChart data={weeklyData} margin={{ top: 14, right: 8, left: -18, bottom: 0 }}>
                     <defs>
-                      <linearGradient id="barFill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#38bdf8" stopOpacity={0.95} />
-                        <stop offset="100%" stopColor="#0ea5e9" stopOpacity={0.35} />
+                      <linearGradient id="barFillToday" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#34d399" stopOpacity={0.95} />
+                        <stop offset="100%" stopColor="#059669" stopOpacity={0.4} />
+                      </linearGradient>
+                      <linearGradient id="barFillPast" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#fbbf24" stopOpacity={0.9} />
+                        <stop offset="100%" stopColor="#d97706" stopOpacity={0.3} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 3" vertical={false} />
@@ -1119,13 +1137,34 @@ export default function AyamCounterPage() {
                     />
                     <Bar
                       dataKey="total"
-                      fill="url(#barFill)"
-                      radius={[4, 4, 0, 0]}
+                      radius={[5, 5, 0, 0]}
                       maxBarSize={44}
-                    />
+                      animationDuration={500}
+                    >
+                      {weeklyData.map((entry, idx) => (
+                        <Cell
+                          key={idx}
+                          fill={
+                            idx === weeklyData.length - 1
+                              ? "url(#barFillToday)"
+                              : "url(#barFillPast)"
+                          }
+                        />
+                      ))}
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+              <p className="mt-1.5 flex items-center justify-end gap-3 text-[10px] text-zinc-500">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-sm bg-gradient-to-b from-amber-400 to-amber-600" />
+                  {lang === "id" ? "Sebelumnya" : "Previous"}
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-sm bg-gradient-to-b from-emerald-400 to-emerald-600" />
+                  {lang === "id" ? "Hari ini" : "Today"}
+                </span>
+              </p>
             </CardContent>
           </Card>
         </motion.section>
@@ -1318,6 +1357,17 @@ export default function AyamCounterPage() {
                     aria-label={t.filterTanggal}
                     className="h-9 w-36 border-zinc-800 bg-zinc-950 text-xs text-zinc-100 focus-visible:ring-amber-500"
                   />
+                  {/* Laporan harian PDF (mengikuti filter tanggal / hari ini) */}
+                  <a
+                    href={ayamApi.dailyReportUrl(historyDate || tanggal || new Date().toISOString().slice(0, 10))}
+                    download
+                    title={t.laporanHarianPh}
+                    aria-label={t.laporanHarian}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-md border border-emerald-900 bg-emerald-950/60 px-2.5 text-xs font-semibold text-emerald-400 transition-all hover:-translate-y-px hover:border-emerald-500/50 hover:bg-emerald-900/60 hover:text-emerald-300"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    <span className="hidden lg:inline">{t.laporanHarian}</span>
+                  </a>
                   {historySearch || historyDate ? (
                     <Button
                       size="sm"
@@ -1352,7 +1402,7 @@ export default function AyamCounterPage() {
                   </p>
                 </div>
               ) : (
-                <div className="ayam-scroll max-h-96 overflow-y-auto rounded-lg border border-zinc-800">
+                <div className="ayam-scroll max-h-96 overflow-x-auto overflow-y-auto rounded-lg border border-zinc-800">
                   <Table>
                     <TableHeader className="sticky top-0 z-10 bg-zinc-900">
                       <TableRow className="border-zinc-800 hover:bg-zinc-900">
@@ -1360,6 +1410,12 @@ export default function AyamCounterPage() {
                         <TableHead className="text-zinc-500">{t.asalAyam}</TableHead>
                         <TableHead className="text-zinc-500">{t.tanggal}</TableHead>
                         <TableHead className="text-zinc-500">{t.jam}</TableHead>
+                        <TableHead className="hidden text-right text-zinc-500 md:table-cell">
+                          {t.durasi}
+                        </TableHead>
+                        <TableHead className="hidden text-right text-zinc-500 lg:table-cell">
+                          {t.rataRata}
+                        </TableHead>
                         <TableHead className="text-right text-zinc-500">
                           {t.total}
                         </TableHead>
@@ -1373,7 +1429,18 @@ export default function AyamCounterPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredHistory.map((h) => (
+                      {filteredHistory.map((h) => {
+                        const st = h.start_time ? new Date(h.start_time).getTime() : NaN;
+                        const en = h.end_time ? new Date(h.end_time).getTime() : NaN;
+                        const durSec =
+                          Number.isFinite(st) && Number.isFinite(en)
+                            ? Math.max(0, (en - st) / 1000)
+                            : NaN;
+                        const rate =
+                          Number.isFinite(durSec) && durSec > 0
+                            ? ((h.total_count ?? 0) / durSec) * 60
+                            : NaN;
+                        return (
                         <TableRow
                           key={h.id}
                           className="group cursor-pointer border-zinc-800/70 transition-colors hover:bg-amber-500/5"
@@ -1391,6 +1458,14 @@ export default function AyamCounterPage() {
                           </TableCell>
                           <TableCell className="text-zinc-400">{h.tanggal}</TableCell>
                           <TableCell className="text-zinc-400">{h.jam}</TableCell>
+                          <TableCell className="hidden text-right font-mono text-[11px] tabular-nums text-zinc-400 md:table-cell">
+                            {Number.isFinite(durSec) && durSec > 0 ? fmtDur(durSec) : "—"}
+                          </TableCell>
+                          <TableCell className="hidden text-right font-mono text-[11px] tabular-nums text-sky-400/90 lg:table-cell">
+                            {Number.isFinite(rate) && rate > 0
+                              ? `${rate.toFixed(1)}`
+                              : "—"}
+                          </TableCell>
                           <TableCell className="text-right font-bold tabular-nums text-amber-400">
                             {h.total_count?.toLocaleString() ?? 0}
                           </TableCell>
@@ -1418,7 +1493,8 @@ export default function AyamCounterPage() {
                             </Button>
                           </TableCell>
                         </TableRow>
-                      ))}
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
