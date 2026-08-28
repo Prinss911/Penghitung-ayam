@@ -1,0 +1,9 @@
+{
+  "name": "ayam-backend",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Ayam Counter Flask backend (YOLOv8 + SocketIO) running on port 5000",
+  "scripts": {
+    "dev": "bash start.sh"
+  }
+}
