@@ -68,12 +68,19 @@ export interface HistoryItem {
   total_count: number;
   start_time: string;
   end_time: string;
+  keterangan?: string;
+  file_name?: string;
 }
 
 export interface HistoryResponse {
   history: HistoryItem[];
   stats: { total_sessions: number; total_count: number };
   error?: string;
+}
+
+export interface SessionDetail extends HistoryItem {
+  keterangan: string;
+  file_name: string;
 }
 
 export interface RuntimeSettings {
@@ -161,6 +168,27 @@ export const ayamApi = {
     ),
 
   getTimeline: () => jsonFetch<TimelineResponse>(bp("/api/timeline")),
+
+  /** Detail satu sesi riwayat */
+  getSessionDetail: (id: number) =>
+    jsonFetch<SessionDetail>(bp(`/api/history/${id}`)),
+
+  /** Hapus sesi riwayat (+ file Excel terkait di backend) */
+  deleteSession: (id: number) =>
+    jsonFetch<{ status: string; id: number; file_removed: boolean }>(
+      bp(`/api/history/${id}`),
+      { method: "DELETE" }
+    ),
+
+  /** Cek kesehatan backend via Next.js manager */
+  backendHealth: () =>
+    jsonFetch<{ healthy: boolean; port: number }>("/api/ayam-backend"),
+
+  /** Minta Next.js manager menyalakan backend bila mati (self-healing) */
+  ensureBackend: () =>
+    jsonFetch<{ status: string; healthy: boolean }>("/api/ayam-backend", {
+      method: "POST",
+    }),
 
   /** URL gambar MJPEG video feed */
   videoFeedUrl: () => bp("/video_feed"),

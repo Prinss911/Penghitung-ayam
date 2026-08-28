@@ -24,6 +24,8 @@ interface VideoFeedProps {
   errorTitle: string;
   errorDesc: string;
   retryLabel?: string;
+  /** Naikkan nilai ini untuk menyambungkan ulang stream otomatis (mis. saat backend pulih) */
+  autoRetryKey?: number;
 }
 
 export function VideoFeed({
@@ -32,10 +34,22 @@ export function VideoFeed({
   errorTitle,
   errorDesc,
   retryLabel = "Retry",
+  autoRetryKey = 0,
 }: VideoFeedProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [status, setStatus] = useState<"connecting" | "live" | "error">("connecting");
   const [nonce, setNonce] = useState(0); // untuk retry (re-mount effect)
+
+  // Sambungkan ulang otomatis ketika autoRetryKey berubah (backend pulih)
+  const firstKey = useRef(true);
+  useEffect(() => {
+    if (firstKey.current) {
+      firstKey.current = false;
+      return;
+    }
+    setNonce((n) => n + 1);
+    setStatus("connecting");
+  }, [autoRetryKey]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

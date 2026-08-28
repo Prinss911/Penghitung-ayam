@@ -46,6 +46,8 @@ export function useAyamDashboard() {
   const socketRef = useRef<Socket | null>(null);
   const lastSocketStatsAt = useRef<number>(0);
   const mounted = useRef(true);
+  const offlineStrikes = useRef(0);
+  const healingRef = useRef(false);
 
   // =====================================================
   // REST polling: sinkronisasi stats + data lainnya
@@ -54,6 +56,8 @@ export function useAyamDashboard() {
     try {
       const s = await ayamApi.getStats();
       if (!mounted.current) return;
+      offlineStrikes.current = 0;
+      healingRef.current = false;
       // Jangan timpa stats socket yang lebih baru dari 2 detik
       const stale = Date.now() - lastSocketStatsAt.current > 2000;
       if (stale || lastSocketStatsAt.current === 0) {
@@ -65,6 +69,24 @@ export function useAyamDashboard() {
     } catch {
       if (!mounted.current) return;
       setConnMode((m) => (m === "socket" ? m : "offline"));
+
+      // ----- SELF-HEALING: backend down 3x berturut-turut → coba nyalakan -----
+      offlineStrikes.current += 1;
+      if (offlineStrikes.current >= 3 && !healingRef.current) {
+        healingRef.current = true;
+        offlineStrikes.current = 0;
+        try {
+          await ayamApi.ensureBackend();
+          if (mounted.current) {
+            // Beri waktu socket/polling tersambung kembali
+            setTimeout(() => {
+              healingRef.current = false;
+            }, 15_000);
+          }
+        } catch {
+          healingRef.current = false;
+        }
+      }
     }
   }, [connMode]);
 
@@ -171,8 +193,17 @@ export function useAyamDashboard() {
     };
   }, [pollStats, refreshSideData, pollTimeline]);
 
+  const refreshDevice = useCallback(async () => {
+    try {
+      const d = await ayamApi.getDevice();
+      if (mounted.current) setDevice(d);
+    } catch {
+      /* device info tetap nilai lama */
+    }
+  }, []);
+
   // =====================================================
-  // Device info (sekali saat mount + retry)
+  // Device info (sekali saat mount + retry + dipakai refresh manual)
   // =====================================================
   useEffect(() => {
     let attempts = 0;
@@ -202,5 +233,6 @@ export function useAyamDashboard() {
     videoOk,
     setVideoOk,
     refreshSideData,
+    refreshDevice,
   };
 }

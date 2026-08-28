@@ -119,6 +119,100 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Color-scheme mengikuti tema: dark default, light saat .light di <html> */
+  html {
+    color-scheme: dark;
+  }
+  html.light {
+    color-scheme: light;
+  }
+}
+
+/* =====================================================
+   LIGHT THEME — Ayam Counter Pro
+   Aplikasi memakai utilitas zinc/aksen Tailwind secara langsung.
+   Untuk mode terang kita memetakan ulang variabel tema Tailwind v4
+   (--color-*) dalam scope .light sehingga seluruh utilitas ikut berubah:
+   - skala zinc dibalik (latar terang, teks gelap)
+   - latar badge *-950 → tint terang, teks *-400 → shade gelap yang kontras
+   ===================================================== */
+html.light {
+  /* skala zinc terbalik */
+  --color-zinc-950: #fafafa;
+  --color-zinc-900: #f4f4f5;
+  --color-zinc-800: #e4e4e7;
+  --color-zinc-700: #d4d4d8;
+  --color-zinc-600: #909098;
+  --color-zinc-500: #71717a;
+  --color-zinc-400: #52525b;
+  --color-zinc-300: #3f3f46;
+  --color-zinc-200: #27272a;
+  --color-zinc-100: #18181b;
+  --color-zinc-50: #09090b;
+
+  /* badge gelap → tint terang + teks kontras */
+  --color-emerald-950: #ecfdf5;
+  --color-emerald-900: #a7f3d0;
+  --color-emerald-400: #047857;
+  --color-emerald-500: #059669;
+
+  --color-amber-950: #fffbeb;
+  --color-amber-900: #fde68a;
+  --color-amber-400: #b45309;
+  --color-amber-500: #d97706;
+
+  --color-sky-950: #f0f9ff;
+  --color-sky-900: #bae6fd;
+  --color-sky-400: #0369a1;
+
+  --color-red-950: #fef2f2;
+  --color-red-900: #fecaca;
+  --color-red-400: #b91c1c;
+
+  --color-violet-950: #f5f3ff;
+  --color-violet-900: #ddd6fe;
+  --color-violet-400: #6d28d9;
+
+  --color-yellow-950: #fefce8;
+  --color-yellow-900: #fef08a;
+  --color-yellow-400: #a16207;
+
+  /* variabel khusus grafik & overlay */
+  --chart-grid: #e4e4e7;
+  --chart-tick: #71717a;
+}
+
+html:not(.light) {
+  --chart-grid: #27272a;
+  --chart-tick: #71717a;
+}
+
+/* Perbaikan kombinasi spesifik di mode terang:
+   tombol amber memakai teks zinc-950 → kontras putih di atas amber jelek,
+   paksa teks gelap khas amber. Spesifisitas .light .bg-amber-500 (0,2,0)
+   mengalahkan .text-zinc-950 (0,1,0). */
+html.light .bg-amber-500 {
+  color: #451a03;
+}
+html.light .hover\:bg-amber-500:hover {
+  color: #451a03;
+}
+/* Tombol merah Stop: teks putih tetap bagus di kedua tema — biarkan. */
+
+/* Grafik recharts memakai warna via CSS var agar ikut tema */
+.ayam-chart-grid {
+  stroke: var(--chart-grid);
+}
+
+/* Scrollbar mengikuti tema */
+html.light .ayam-scroll::-webkit-scrollbar-thumb {
+  background: #d4d4d8;
+}
+html.light .ayam-scroll::-webkit-scrollbar-thumb:hover {
+  background: #a1a1aa;
+}
+html.light .ayam-scroll {
+  scrollbar-color: #d4d4d8 transparent;
 }
 
 /* =====================================================

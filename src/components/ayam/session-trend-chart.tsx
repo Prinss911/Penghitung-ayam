@@ -71,16 +71,16 @@ export function SessionTrendChart({ points, total, active, t }: SessionTrendChar
                     <stop offset="100%" stopColor="#f59e0b" stopOpacity={0.02} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid stroke="#27272a" strokeDasharray="3 3" vertical={false} />
+                <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 3" vertical={false} />
                 <XAxis
                   dataKey="t"
-                  tick={{ fill: "#71717a", fontSize: 11 }}
+                  tick={{ fill: "var(--chart-tick)", fontSize: 11 }}
                   tickLine={false}
-                  axisLine={{ stroke: "#3f3f46" }}
+                  axisLine={{ stroke: "var(--chart-grid)" }}
                   tickFormatter={(v: number) => `${Math.round(v)}s`}
                 />
                 <YAxis
-                  tick={{ fill: "#71717a", fontSize: 11 }}
+                  tick={{ fill: "var(--chart-tick)", fontSize: 11 }}
                   tickLine={false}
                   axisLine={false}
                   allowDecimals={false}

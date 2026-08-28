@@ -105,3 +105,50 @@ Rekomendasi ronde berikutnya (prioritas):
 3. Theme light/dark toggle (next-themes).
 4. Notifikasi browser (Notification API) untuk milestone saat tab di background.
 5. Auto-refresh pengaturan di kartu Backend saat diubah dari dialog (saat ini perlu reload halaman untuk refresh confidence di kartu).
+
+---
+Task ID: 3
+Agent: Z.ai Code (cron webDevReview ronde 3)
+Date: 2026-08-28
+Task: QA berkala + assessment status; fokus ronde ini: perbaikan bug hardening sesi + fitur baru (hapus/detail riwayat, tema light/dark, self-healing backend, timer durasi).
+
+Work Log:
+- QA awal via agent-browser: layanan sehat, video live, TANPA error console. Temuan: sesi liar "Unknown" (45+ ayam) aktif — pelaku: automasi browser ronde sebelumnya yang menyelesaikan QA-nya tepat sebelum sesi ini mulai (log: POST /api/session/start 16:25:12, sebelum perintah pertama ronde ini 16:26:45).
+- BUG #1 (data loss, fix backend app.py): `_do_start_session` menimpa sesi aktif TANPA menyimpan sesi lama → buffer Excel hilang + tidak masuk DB. Fix: guard overwrite — auto stop&save sesi lama dulu.
+- BUG #2 (durasi selalu 0, fix database.py + app.py): `add_session` menulis start_time=end_time=now. Fix: global `session_started_at` di-set saat start, dikirim ke `add_session(start_time=...)`. Terverifikasi: sesi 12 dtk → durasi 12.3s di API; dialog detail menampilkan "34 sec / 14.0 chickens/min".
+- BUG #3 (delete 500, fix database.py): tabel `detections` skema lama TIDAK punya kolom `session_id` → DELETE gagal "no such column". Fix: cek PRAGMA table_info dulu, skip cleanup detections bila kolom tidak ada.
+- Cleanup: hapus file liar `exports/ayam_Unknown_..._154839.xlsx`; sesi liar dibuang via restart backend.
+- BACKEND BARU: `DELETE /api/history/<id>` (hapus row DB + file Excel terkait, basename-safe) dan `GET /api/history/<id>` (detail sesi). `get_history` kini menyertakan `keterangan` + `file_name`.
+- MINI-SERVICE DISCOVERY PENTING: sandbox MENGHAPUS proses background yang di-spawn dari perintah Bash tool (~30-60 dtk, apapun setsid/nohup/bun run dev). Solusi: route Next.js `src/app/api/ayam-backend/route.ts` — GET health, POST spawn `start.sh` detached DARI PROSES next-server (cgroup boot, kebal reaper). Backend kini child of next-server dan TAHAN LAMA. Round 1-2 kebetulan selamat karena dijalankan saat sesi agent masih hidup.
+- SELF-HEALING: `use-ayam-dashboard` — 3x polling gagal berurutan → panggil POST /api/ayam-backend (auto-restart). Toast "Backend dinyalakan ulang" saat offline + "kembali online" saat pulih + video feed auto-reconnect (autoRetryKey) TANPA klik manual. Terverifikasi 2x: kill backend → pulih otomatis ~50 dtk, video hidup sendiri.
+- FRONTEND BARU:
+  - Validasi wajib "Asal Ayam": tombol Mulai disabled + hint amber + border amber saat kosong; tidak ada lagi sesi "Unknown" dari klik liar.
+  - Hapus sesi riwayat: tombol trash per baris (muncul on hover) + AlertDialog konfirmasi + toast; file Excel ikon terhapus di backend.
+  - Dialog Detail Sesi (klik baris riwayat): origin highlight, total, durasi, rata-rata ayam/menit, tanggal/jam, catatan, file Excel + tombol unduh.
+  - Timer durasi sesi berjalan (mm:ss dari timeline backend) di kartu info sesi.
+  - Datalist asal ayam (quick-pick dari riwayat unik, max 12).
+  - SettingsDialog `onSaved` → kartu Backend langsung refresh (tidak perlu reload halaman).
+  - Theme toggle 🌙/☀️ di header: localStorage `ayam-theme` + script no-flash di layout.tsx.
+  - LIGHT THEME penuh via override CSS var Tailwind v4 (`html.light { --color-zinc-*: ... }` + tint badge -950→terang, -400→gelap kontras + fix spesifisitas tombol amber + color-scheme + scrollbar + chart var). Chart recharts kini pakai `var(--chart-grid)`/`var(--chart-tick)`.
+  - Header mobile: teks badge koneksi disembunyikan di <sm agar judul app tidak tergusur.
+- Verifikasi agent-browser: light+dark theme (persist via reload), sesi penuh Farm Sukabumi 01 (8 ayam, 34 dtk), detail dialog EN/ID, delete sesi #11 (row + file hilang), timer 01:08 live, mobile 390px (header, video retry), self-healing 2x. `bun run lint` → 0 error.
+
+Stage Summary:
+- Dashboard v2.2: bug data-loss & durasi & delete diperbaiki; 6 fitur baru (hapus riwayat, detail sesi, tema light/dark, self-healing, timer durasi, datalist+onSaved refresh); styling light theme menyeluruh.
+- Backend: 3 endpoint baru (DELETE history, GET history detail, termasuk keterangan+file_name) + 2 bug fix + 1 schema-guard.
+- Data uji: sesi #10 Farm Uji Coba R3 (32), #12 Farm Sukabumi 01 (8) — sengaja disimpan sebagai data demo.
+- Infrastruktur: backend Flask kini dikelola via /api/ayam-backend (Next.js manager) — CARA TUNGGAL untuk menjalankan backend di sandbox ini.
+
+Risiko / catatan:
+- Jika kontainer di-restart, /start.sh otomatis menjalankan mini-services (bun run dev di ayam-backend) — tetap berlaku.
+- Jangan jalankan backend via `bash start.sh` langsung dari Bash tool — akan ter-reap dalam ~1 menit. Gunakan POST /api/ayam-backend.
+- Sesi lama (id ≤10) punya start_time=end_time → dialog detail menampilkan durasi 0; hanya sesi baru yang benar.
+- Nilai .env: CONFIDENCE_THRESHOLD=0.25, COUNT_LINE_POSITION=112, ZONE_WIDTH=100 (default).
+- Viewer pertama kali: bahasa default ID, tema default dark; keduanya persist di localStorage browser masing-masing.
+
+Rekomendasi ronde berikutnya (prioritas):
+1. Halaman pengaturan kamera/sumber (RTSP vs video) dari UI.
+2. Mode deteksi file upload (demo selain loop).
+3. Notifikasi browser (Notification API) untuk milestone saat tab di background.
+4. Simpan timeline per-menit ke DB agar grafik sesi bertahan setelah restart backend.
+5. Paginasi/limit riwayat + pencarian di dialog detail (saat ini pakai data baris).

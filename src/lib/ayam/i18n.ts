@@ -120,6 +120,36 @@ export const dict = {
     hasilFilter: "hasil",
     // CSV
     unduhCsv: "Unduh CSV",
+    // Required origin
+    asalAyamRequired: "Isi asal ayam dulu untuk memulai sesi",
+    // Elapsed timer
+    durasiBerjalan: "Durasi",
+    perMenit: "ayam/menit",
+    // Detail dialog
+    detailSesi: "Detail Sesi",
+    detailSesiDesc: "Ringkasan lengkap sesi penghitungan",
+    durasi: "Durasi",
+    rataRata: "Rata-rata",
+    catatan: "Catatan",
+    tanpaCatatan: "Tidak ada catatan",
+    fileTerkait: "File Excel",
+    lihatDetail: "Lihat detail",
+    tutup: "Tutup",
+    // Delete
+    hapus: "Hapus",
+    hapusSesi: "Hapus sesi ini?",
+    hapusSesiDesc: "Riwayat dan file Excel terkait akan dihapus permanen.",
+    sesiDihapus: "Sesi dihapus dari riwayat",
+    gagalHapus: "Gagal menghapus sesi",
+    batalkan: "Batal",
+    yaHapus: "Ya, hapus",
+    menghapus: "Menghapus...",
+    // Theme
+    temaGelap: "Mode gelap",
+    temaTerang: "Mode terang",
+    // Self-healing
+    backendMulaiUlang: "Backend sedang dinyalakan ulang otomatis...",
+    backendPulih: "Backend kembali online!",
   },
   en: {
     appName: "Ayam Counter Pro",
@@ -227,6 +257,36 @@ export const dict = {
     hasilFilter: "results",
     // CSV
     unduhCsv: "Download CSV",
+    // Required origin
+    asalAyamRequired: "Fill in the chicken origin to start a session",
+    // Elapsed timer
+    durasiBerjalan: "Duration",
+    perMenit: "chickens/min",
+    // Detail dialog
+    detailSesi: "Session Detail",
+    detailSesiDesc: "Complete summary of the counting session",
+    durasi: "Duration",
+    rataRata: "Average",
+    catatan: "Notes",
+    tanpaCatatan: "No notes",
+    fileTerkait: "Excel File",
+    lihatDetail: "View details",
+    tutup: "Close",
+    // Delete
+    hapus: "Delete",
+    hapusSesi: "Delete this session?",
+    hapusSesiDesc: "The history entry and its Excel file will be permanently removed.",
+    sesiDihapus: "Session deleted from history",
+    gagalHapus: "Failed to delete session",
+    batalkan: "Cancel",
+    yaHapus: "Yes, delete",
+    menghapus: "Deleting...",
+    // Theme
+    temaGelap: "Dark mode",
+    temaTerang: "Light mode",
+    // Self-healing
+    backendMulaiUlang: "Backend is being restarted automatically...",
+    backendPulih: "Backend is back online!",
   },
 } as const;
 

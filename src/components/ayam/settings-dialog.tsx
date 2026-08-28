@@ -26,9 +26,11 @@ import type { Dict } from "@/lib/ayam/i18n";
 
 interface SettingsDialogProps {
   t: Dict;
+  /** Dipanggil setelah pengaturan berhasil diterapkan (untuk refresh kartu Backend) */
+  onSaved?: () => void;
 }
 
-export function SettingsDialog({ t }: SettingsDialogProps) {
+export function SettingsDialog({ t, onSaved }: SettingsDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -79,13 +81,14 @@ export function SettingsDialog({ t }: SettingsDialogProps) {
         zone_width_config: zone,
       });
       toast.success(t.pengaturanTersimpan);
+      onSaved?.();
       setOpen(false);
     } catch {
       toast.error(t.gagalSimpan);
     } finally {
       setSaving(false);
     }
-  }, [conf, lineX, zone, initial, t]);
+  }, [conf, lineX, zone, initial, t, onSaved]);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

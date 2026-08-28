@@ -22,6 +22,7 @@ import {
 import {
   Bird,
   Camera,
+  ChevronRight,
   Cpu,
   Crosshair,
   Download,
@@ -38,6 +39,8 @@ import {
   SignalHigh,
   SignalZero,
   Square,
+  Timer,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -47,6 +50,16 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Table,
   TableBody,
@@ -60,8 +73,10 @@ import { useAyamDashboard } from "@/components/ayam/use-ayam-dashboard";
 import { VideoFeed } from "@/components/ayam/video-feed";
 import { SettingsDialog } from "@/components/ayam/settings-dialog";
 import { SessionTrendChart } from "@/components/ayam/session-trend-chart";
+import { SessionDetailDialog } from "@/components/ayam/session-detail-dialog";
+import { ThemeToggle } from "@/components/ayam/theme-toggle";
 import { AnimatedNumber } from "@/components/ayam/animated-number";
-import { ayamApi } from "@/lib/ayam/api";
+import { ayamApi, type HistoryItem } from "@/lib/ayam/api";
 import { dict, type Lang } from "@/lib/ayam/i18n";
 
 // =====================================================
@@ -154,9 +169,9 @@ function ConnBadge({ mode, t }: { mode: string; t: (typeof dict)[Lang] }) {
   const M = map[mode] ?? map.connecting;
   const Icon = M.icon;
   return (
-    <Badge variant="outline" className={`${M.cls} gap-1.5 px-2.5 py-1 font-medium`}>
-      <Icon className="h-3.5 w-3.5" />
-      {M.text}
+    <Badge variant="outline" className={`${M.cls} gap-1.5 px-2 py-1 font-medium sm:px-2.5`}>
+      <Icon className="h-3.5 w-3.5 shrink-0" />
+      <span className="hidden min-w-0 truncate sm:inline">{M.text}</span>
     </Badge>
   );
 }
@@ -197,6 +212,7 @@ export default function AyamCounterPage() {
     timeline,
     connMode,
     refreshSideData,
+    refreshDevice,
   } = useAyamDashboard();
 
   // ----- form state -----
@@ -210,8 +226,16 @@ export default function AyamCounterPage() {
   const [historySearch, setHistorySearch] = useState("");
   const [historyDate, setHistoryDate] = useState("");
 
-  // ----- milestone -----
+  // ----- detail & delete dialog -----
+  const [detailSession, setDetailSession] = useState<HistoryItem | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<HistoryItem | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+
+  // ----- milestone & self-healing toast -----
   const lastMilestoneRef = useRef(0);
+  const prevConnMode = useRef<string>("connecting");
+  const [recoveryTick, setRecoveryTick] = useState(0);
 
   // default tanggal & jam (client only, hindari hydration mismatch)
   useEffect(() => {
@@ -222,6 +246,36 @@ export default function AyamCounterPage() {
   }, []);
 
   const sessionActive = stats.session_active || stats.is_processing === true;
+  const canStart = asalAyam.trim().length > 0;
+
+  // ----- durasi sesi berjalan (dari timeline backend, detik) -----
+  const elapsedSec = useMemo(() => {
+    if (!sessionActive || timeline.length === 0) return 0;
+    return timeline[timeline.length - 1]?.t ?? 0;
+  }, [sessionActive, timeline]);
+  const elapsedLabel = useMemo(() => {
+    const s = Math.max(0, Math.floor(elapsedSec));
+    const hh = Math.floor(s / 3600);
+    const mm = Math.floor((s % 3600) / 60);
+    const ss = s % 60;
+    const p = (n: number) => String(n).padStart(2, "0");
+    return hh > 0 ? `${hh}:${p(mm)}:${p(ss)}` : `${p(mm)}:${p(ss)}`;
+  }, [elapsedSec]);
+
+  // ----- toast saat backend down / pulih (self-healing) -----
+  useEffect(() => {
+    const prev = prevConnMode.current;
+    if (prev !== connMode) {
+      if (connMode === "offline") {
+        toast.info(t.backendMulaiUlang, { duration: 8000 });
+      } else if (prev === "offline" && (connMode === "socket" || connMode === "polling")) {
+        toast.success(t.backendPulih);
+        // Picu sambung-ulang otomatis video feed
+        setRecoveryTick((k) => k + 1);
+      }
+      prevConnMode.current = connMode;
+    }
+  }, [connMode, t]);
 
   // ----- beep (WebAudio, tanpa asset) -----
   const playBeep = useCallback(() => {
@@ -271,10 +325,14 @@ export default function AyamCounterPage() {
 
   // ----- actions -----
   const handleStart = useCallback(async () => {
+    if (!canStart) {
+      toast.error(t.gagalStart, { description: t.asalAyamRequired });
+      return;
+    }
     setBusy("start");
     try {
       await ayamApi.startSession({
-        asal_ayam: asalAyam.trim() || "Unknown",
+        asal_ayam: asalAyam.trim(),
         tanggal: tanggal,
         jam: jam,
         keterangan: keterangan.trim(),
@@ -293,7 +351,7 @@ export default function AyamCounterPage() {
     } finally {
       setBusy(null);
     }
-  }, [asalAyam, tanggal, jam, keterangan, t, lang]);
+  }, [asalAyam, tanggal, jam, keterangan, t, lang, canStart]);
 
   const handleStop = useCallback(async () => {
     setBusy("stop");
@@ -329,6 +387,31 @@ export default function AyamCounterPage() {
     }
   }, [t]);
 
+  // ----- hapus sesi riwayat -----
+  const handleDelete = useCallback(async () => {
+    if (!deleteTarget) return;
+    setDeleteBusy(true);
+    try {
+      const res = await ayamApi.deleteSession(deleteTarget.id);
+      toast.success(t.sesiDihapus, {
+        description: res.file_removed
+          ? `${deleteTarget.file_name?.split("/").pop()} — ✓`
+          : `#${deleteTarget.id}`,
+      });
+      setDeleteTarget(null);
+      refreshSideData();
+    } catch {
+      toast.error(t.gagalHapus);
+    } finally {
+      setDeleteBusy(false);
+    }
+  }, [deleteTarget, t, refreshSideData]);
+
+  const openDetail = useCallback((h: HistoryItem) => {
+    setDetailSession(h);
+    setDetailOpen(true);
+  }, []);
+
   // ----- derived -----
   const daily = history.stats;
 
@@ -356,6 +439,16 @@ export default function AyamCounterPage() {
       return okSearch && okDate;
     });
   }, [history.history, historySearch, historyDate]);
+
+  // daftar asal ayam unik untuk quick-pick (datalist)
+  const originOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const h of history.history) {
+      const o = (h.asal_ayam ?? "").trim();
+      if (o) set.add(o);
+    }
+    return Array.from(set).slice(0, 12);
+  }, [history.history]);
 
   const sortedExports = useMemo(
     () => [...exports].sort((a, b) => b.modified - a.modified),
@@ -390,7 +483,8 @@ export default function AyamCounterPage() {
 
           <div className="flex items-center gap-2 sm:gap-3">
             <ConnBadge mode={connMode} t={t} />
-            <SettingsDialog t={t} />
+            <SettingsDialog t={t} onSaved={refreshDevice} />
+            <ThemeToggle t={t} />
             {/* Language toggle */}
             <div className="flex overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900 text-xs font-semibold">
               <button
@@ -551,6 +645,7 @@ export default function AyamCounterPage() {
                     errorTitle={t.kameraGagal}
                     errorDesc={t.kameraGagalDesc}
                     retryLabel={lang === "id" ? "Coba lagi" : "Retry"}
+                    autoRetryKey={recoveryTick}
                   />
                 </div>
 
@@ -590,7 +685,7 @@ export default function AyamCounterPage() {
             <CardContent className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="asal" className="text-zinc-400">
-                  {t.asalAyam}
+                  {t.asalAyam} <span className="text-amber-500">*</span>
                 </Label>
                 <Input
                   id="asal"
@@ -598,8 +693,23 @@ export default function AyamCounterPage() {
                   onChange={(e) => setAsalAyam(e.target.value)}
                   placeholder={t.asalAyamPh}
                   disabled={sessionActive}
-                  className="border-zinc-800 bg-zinc-950 text-zinc-100 placeholder:text-zinc-600 focus-visible:ring-amber-500"
+                  list="asal-ayam-options"
+                  aria-required="true"
+                  aria-invalid={!canStart}
+                  className={`border-zinc-800 bg-zinc-950 text-zinc-100 placeholder:text-zinc-600 focus-visible:ring-amber-500 ${
+                    !canStart ? "border-amber-500/40" : ""
+                  }`}
                 />
+                <datalist id="asal-ayam-options">
+                  {originOptions.map((o) => (
+                    <option key={o} value={o} />
+                  ))}
+                </datalist>
+                {!canStart && !sessionActive ? (
+                  <p className="flex items-center gap-1 text-[11px] text-amber-500/90">
+                    <Info className="h-3 w-3" /> {t.asalAyamRequired}
+                  </p>
+                ) : null}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
@@ -612,7 +722,7 @@ export default function AyamCounterPage() {
                     value={tanggal}
                     onChange={(e) => setTanggal(e.target.value)}
                     disabled={sessionActive}
-                    className="border-zinc-800 bg-zinc-950 text-zinc-100 [color-scheme:dark] focus-visible:ring-amber-500"
+                    className="border-zinc-800 bg-zinc-950 text-zinc-100 focus-visible:ring-amber-500"
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -625,7 +735,7 @@ export default function AyamCounterPage() {
                     value={jam}
                     onChange={(e) => setJam(e.target.value)}
                     disabled={sessionActive}
-                    className="border-zinc-800 bg-zinc-950 text-zinc-100 [color-scheme:dark] focus-visible:ring-amber-500"
+                    className="border-zinc-800 bg-zinc-950 text-zinc-100 focus-visible:ring-amber-500"
                   />
                 </div>
               </div>
@@ -658,6 +768,13 @@ export default function AyamCounterPage() {
                       {t.asalAyam}:{" "}
                       <span className="font-medium text-zinc-200">
                         {stats.session_data.asal_ayam}
+                      </span>
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <Timer className="h-3 w-3 text-emerald-500" />
+                      {t.durasiBerjalan}:{" "}
+                      <span className="font-mono font-semibold tabular-nums text-emerald-400">
+                        {elapsedLabel}
                       </span>
                     </span>
                     <span>
@@ -705,8 +822,9 @@ export default function AyamCounterPage() {
                 ) : (
                   <Button
                     onClick={handleStart}
-                    disabled={busy === "start"}
-                    className="h-11 bg-amber-500 font-semibold text-zinc-950 hover:bg-amber-400 focus-visible:ring-amber-500"
+                    disabled={busy === "start" || !canStart}
+                    title={!canStart ? t.asalAyamRequired : undefined}
+                    className="h-11 bg-amber-500 font-semibold text-zinc-950 hover:bg-amber-400 focus-visible:ring-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {busy === "start" ? (
                       <>
@@ -786,15 +904,15 @@ export default function AyamCounterPage() {
                         <stop offset="100%" stopColor="#0ea5e9" stopOpacity={0.35} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid stroke="#27272a" strokeDasharray="3 3" vertical={false} />
+                    <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 3" vertical={false} />
                     <XAxis
                       dataKey="day"
-                      tick={{ fill: "#71717a", fontSize: 11 }}
+                      tick={{ fill: "var(--chart-tick)", fontSize: 11 }}
                       tickLine={false}
-                      axisLine={{ stroke: "#3f3f46" }}
+                      axisLine={{ stroke: "var(--chart-grid)" }}
                     />
                     <YAxis
-                      tick={{ fill: "#71717a", fontSize: 11 }}
+                      tick={{ fill: "var(--chart-tick)", fontSize: 11 }}
                       tickLine={false}
                       axisLine={false}
                       allowDecimals={false}
@@ -1009,7 +1127,7 @@ export default function AyamCounterPage() {
                     value={historyDate}
                     onChange={(e) => setHistoryDate(e.target.value)}
                     aria-label={t.filterTanggal}
-                    className="h-9 w-36 border-zinc-800 bg-zinc-950 text-xs text-zinc-100 [color-scheme:dark] focus-visible:ring-amber-500"
+                    className="h-9 w-36 border-zinc-800 bg-zinc-950 text-xs text-zinc-100 focus-visible:ring-amber-500"
                   />
                   {historySearch || historyDate ? (
                     <Button
@@ -1059,19 +1177,28 @@ export default function AyamCounterPage() {
                         <TableHead className="text-right text-zinc-500">
                           {t.selesai}
                         </TableHead>
+                        <TableHead className="w-16 text-right text-zinc-500">
+                          <span className="sr-only">{t.hapus}</span>
+                          <Trash2 className="ml-auto h-3.5 w-3.5" />
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {filteredHistory.map((h) => (
                         <TableRow
                           key={h.id}
-                          className="border-zinc-800/70 hover:bg-zinc-900/70"
+                          className="group cursor-pointer border-zinc-800/70 transition-colors hover:bg-amber-500/5"
+                          onClick={() => openDetail(h)}
+                          title={t.lihatDetail}
                         >
                           <TableCell className="font-mono text-xs text-zinc-500">
                             {h.id}
                           </TableCell>
                           <TableCell className="max-w-40 truncate font-medium">
-                            {h.asal_ayam}
+                            <span className="inline-flex items-center gap-1.5">
+                              {h.asal_ayam}
+                              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-600 opacity-0 transition-opacity group-hover:opacity-100" />
+                            </span>
                           </TableCell>
                           <TableCell className="text-zinc-400">{h.tanggal}</TableCell>
                           <TableCell className="text-zinc-400">{h.jam}</TableCell>
@@ -1085,6 +1212,22 @@ export default function AyamCounterPage() {
                                 )
                               : "—"}
                           </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              aria-label={`${t.hapus} #${h.id} (${h.asal_ayam})`}
+                              title={t.hapus}
+                              disabled={deleteBusy}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteTarget(h);
+                              }}
+                              className="h-8 w-8 text-zinc-600 opacity-0 transition-all hover:bg-red-500/15 hover:text-red-400 focus-visible:opacity-100 group-hover:opacity-100"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -1095,6 +1238,65 @@ export default function AyamCounterPage() {
           </Card>
         </motion.section>
       </main>
+
+      {/* ================= DIALOGS ================= */}
+      <SessionDetailDialog
+        session={detailSession}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+        t={t}
+        lang={lang}
+      />
+
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => {
+          if (!o) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent className="border-zinc-800 bg-zinc-950 text-zinc-100">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-4 w-4 text-red-400" />
+              {t.hapusSesi}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-zinc-400">
+              {t.hapusSesiDesc}
+              {deleteTarget ? (
+                <span className="mt-2 block rounded-md bg-zinc-900 p-2 font-mono text-xs text-zinc-300">
+                  #{deleteTarget.id} — {deleteTarget.asal_ayam} ({deleteTarget.tanggal}) ·{" "}
+                  {deleteTarget.total_count} {t.totalAyam.toLowerCase()}
+                </span>
+              ) : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              disabled={deleteBusy}
+              className="border-zinc-800 bg-transparent text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100"
+            >
+              {t.batalkan}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleteBusy}
+              onClick={(e) => {
+                e.preventDefault();
+                handleDelete();
+              }}
+              className="bg-red-600 font-semibold text-white hover:bg-red-700"
+            >
+              {deleteBusy ? (
+                <>
+                  <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                  {t.menghapus}
+                </>
+              ) : (
+                t.yaHapus
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* ================= FOOTER (sticky bottom) ================= */}
       <footer className="mt-auto border-t border-zinc-800 bg-zinc-950 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] pt-4">
