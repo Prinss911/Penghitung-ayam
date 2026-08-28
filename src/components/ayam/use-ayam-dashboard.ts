@@ -15,6 +15,7 @@ import {
   type DeviceInfo,
   type ExportFile,
   type HistoryResponse,
+  type TimelinePoint,
 } from "@/lib/ayam/api";
 
 export type ConnMode = "connecting" | "socket" | "polling" | "offline";
@@ -38,6 +39,7 @@ export function useAyamDashboard() {
   const [device, setDevice] = useState<DeviceInfo | null>(null);
   const [history, setHistory] = useState<HistoryResponse>(EMPTY_HISTORY);
   const [exports, setExports] = useState<ExportFile[]>([]);
+  const [timeline, setTimeline] = useState<TimelinePoint[]>([]);
   const [connMode, setConnMode] = useState<ConnMode>("connecting");
   const [videoOk, setVideoOk] = useState<boolean | null>(null); // null = belum tahu
 
@@ -77,6 +79,16 @@ export function useAyamDashboard() {
       setExports(Array.isArray(e) ? e : []);
     } catch {
       /* abaikan */
+    }
+  }, []);
+
+  const pollTimeline = useCallback(async () => {
+    try {
+      const tl = await ayamApi.getTimeline();
+      if (!mounted.current) return;
+      setTimeline(Array.isArray(tl.points) ? tl.points : []);
+    } catch {
+      /* abaikan — grafik tetap memakai data terakhir */
     }
   }, []);
 
@@ -144,17 +156,20 @@ export function useAyamDashboard() {
   useEffect(() => {
     const t1 = setInterval(pollStats, 2000);
     const t2 = setInterval(refreshSideData, 6000);
+    const t3 = setInterval(pollTimeline, 2000);
     // Panggilan awal dijadwalkan agar tidak setState sinkron dalam effect
     const initial = setTimeout(() => {
       pollStats();
       refreshSideData();
+      pollTimeline();
     }, 0);
     return () => {
       clearTimeout(initial);
       clearInterval(t1);
       clearInterval(t2);
+      clearInterval(t3);
     };
-  }, [pollStats, refreshSideData]);
+  }, [pollStats, refreshSideData, pollTimeline]);
 
   // =====================================================
   // Device info (sekali saat mount + retry)
@@ -182,6 +197,7 @@ export function useAyamDashboard() {
     device,
     history,
     exports,
+    timeline,
     connMode,
     videoOk,
     setVideoOk,

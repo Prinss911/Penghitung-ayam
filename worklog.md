@@ -58,3 +58,50 @@ Ide pengembangan berikutnya (prioritas):
 4. Notifikasi suara/visual saat count milestone.
 5. Export CSV selain Excel; filter riwayat berdasarkan tanggal.
 6. Dark/light theme toggle (next-themes sudah tersedia).
+
+---
+
+Task ID: 2
+Agent: Z.ai Code (cron webDevReview ronde 2)
+Date: 2026-08-28
+Task: QA berkala + pengembangan fitur baru (pengaturan runtime, grafik, milestone, filter riwayat, CSV, styling polish).
+
+Work Log:
+- QA awal: layanan sehat (Flask :5000, Next.js :3000, gateway :81), dashboard live video OK, tanpa error console.
+- BACKEND (app/app.py):
+  - `GET/POST /api/settings` — confidence, count_line_x, zone_width; POST langsung mengubah Config + counter + detector (live-apply tanpa restart) dan persist ke `.env` via `_update_env_file()`.
+  - `GET /api/timeline` — timeline kumulatif sesi berjalan dari `counter.count_history` (elapsed detik + total) untuk grafik.
+  - `GET /api/download/csv/<filename>` — konversi xlsx → CSV on-the-fly via pandas.
+- FRONTEND:
+  - `settings-dialog.tsx` — dialog Pengaturan Deteksi (3 slider: confidence 5–95%, garis hitung 0–480px, zona 10–300px; badge nilai, hint teks, indikator dirty, toast sukses/gagal).
+  - `session-trend-chart.tsx` — AreaChart recharts (gradasi amber) tren kumulatif + badge LIVE saat sesi aktif.
+  - Grafik "Ringkasan 7 Hari" — BarChart biru total ayam/hari (agregasi dari riwayat) + badge Sesi Hari Ini & Ayam Hari Ini.
+  - `animated-number.tsx` — angka count-up easeOutCubic (rAF) untuk kartu total.
+  - Milestone: toast + beep WebAudio setiap kelipatan 10 ayam (sinkron reset saat sesi baru/reset).
+  - Riwayat: pencarian asal ayam + filter tanggal + badge jumlah hasil + tombol "tampilkan semua".
+  - Ekspor: tombol unduh CSV (ikon FileDown) di tiap baris + badge jumlah file.
+  - Styling: animasi masuk framer-motion bertahap per section, hover lift + glow shadow per-aksen pada stat card, top gradient line, ikon scale on hover.
+  - Bahasa dipersist ke localStorage (`ayam-lang`) — tidak reset saat reload.
+- Verifikasi agent-browser: dialog settings (ubah 25%→35%→terapkan→backend `confidence:0.35` + .env tertulis → dikembalikan 0.25); sesi penuh Kandang Rondomestik = 31 ayam tercatat, Excel 7.2KB tersimpan, riwayat 4 sesi; filter "farm" → 2 hasil; grafik tren & 7-hari tampil benar; EN/ID + persist OK; lint 0 error.
+- Bersih-bersih: hapus sesi liar "Unknown" (file xlsx + baris DB) akibat klik test yang meleset.
+
+Temuan & perbaikan kecil:
+- `agent-browser find --name "EN"` ternyata cocok substring ke tombol lain (membuka dialog Pengaturan secara tak sengaja). Pelajaran: untuk nama pendek, gunakan eval DOM click dengan exact match (`textContent.trim()==='EN'`).
+- Tombol X dialog Radix tidak punya `aria-label="Close"` (accessible name dari sr-only span) — gunakan Escape untuk menutup via otomasi.
+
+Stage Summary:
+- Semua layanan sehat; lint bersih; dashboard v2.1 dengan 6 fitur baru terverifikasi end-to-end.
+- Backend: 3 endpoint baru (/api/settings GET+POST, /api/timeline, /api/download/csv) — semuanya teruji via curl & UI.
+- Data uji di DB: 3 sesi (TEST-FARM 7, Farm Citayam 07 23, Kandang Rondomestik 31).
+
+Risiko / catatan:
+- Saat restart backend, grafik tren sesi hilang (in-memory by design); riwayat & ekspor tetap aman di SQLite/Excel.
+- Nilai .env sekarang: CONFIDENCE_THRESHOLD=0.25, COUNT_LINE_POSITION=112, ZONE_WIDTH=100 (dipulihkan setelah pengujian).
+- Bahasa disimpan di localStorage browser sandbox — preview user baru mulai dari ID.
+
+Rekomendasi ronde berikutnya (prioritas):
+1. Halaman detail sesi (klik baris riwayat → detail deteksi per menit + grafik).
+2. Deteksi file video upload (mode demo selain loop).
+3. Theme light/dark toggle (next-themes).
+4. Notifikasi browser (Notification API) untuk milestone saat tab di background.
+5. Auto-refresh pengaturan di kartu Backend saat diubah dari dialog (saat ini perlu reload halaman untuk refresh confidence di kartu).

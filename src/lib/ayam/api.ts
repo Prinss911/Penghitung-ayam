@@ -76,6 +76,28 @@ export interface HistoryResponse {
   error?: string;
 }
 
+export interface RuntimeSettings {
+  confidence: number;
+  count_line_x: number;
+  zone_width: number;
+  camera_fps: number;
+  count_line_config: number;
+  zone_width_config: number;
+}
+
+export interface TimelinePoint {
+  t: number;
+  total: number;
+}
+
+export interface TimelineResponse {
+  points: TimelinePoint[];
+  total: number;
+  active: boolean;
+  session?: Stats["session_data"];
+  error?: string;
+}
+
 // =====================================================
 // API FUNCTIONS
 // =====================================================
@@ -122,9 +144,31 @@ export const ayamApi = {
       method: "POST",
     }),
 
+  getSettings: () => jsonFetch<RuntimeSettings>(bp("/api/settings")),
+
+  updateSettings: (data: {
+    confidence?: number;
+    count_line_x?: number;
+    zone_width?: number;
+  }) =>
+    jsonFetch<{ status: string; applied: Record<string, number> }>(
+      bp("/api/settings"),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      }
+    ),
+
+  getTimeline: () => jsonFetch<TimelineResponse>(bp("/api/timeline")),
+
   /** URL gambar MJPEG video feed */
   videoFeedUrl: () => bp("/video_feed"),
 
   /** URL unduh file Excel export */
   downloadUrl: (filename: string) => bp(`/api/download/${encodeURIComponent(filename)}`),
+
+  /** URL unduh versi CSV dari file Excel export */
+  csvUrl: (filename: string) =>
+    bp(`/api/download/csv/${encodeURIComponent(filename)}`),
 };

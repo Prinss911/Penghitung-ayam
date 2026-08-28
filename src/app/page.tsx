@@ -1,18 +1,31 @@
 "use client";
 
 /**
- * Ayam Counter Pro — Dashboard utama
+ * Ayam Counter Pro — Dashboard utama (v2.1)
  * Frontend Next.js untuk backend Flask + YOLOv8 (port 5000 via gateway)
  * Bilingual: Bahasa Indonesia / English
+ * Fitur: live feed canvas, kontrol sesi, pengaturan runtime, grafik tren,
+ *        ringkasan 7 hari, milestone toast + beep, filter riwayat, CSV.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { motion } from "framer-motion";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip as ReTooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import {
   Bird,
   Camera,
   Cpu,
   Crosshair,
   Download,
+  FileDown,
   FileSpreadsheet,
   Gauge,
   History,
@@ -20,6 +33,7 @@ import {
   Play,
   RotateCcw,
   ScanEye,
+  Search,
   Signal,
   SignalHigh,
   SignalZero,
@@ -33,7 +47,6 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Separator } from "@/components/ui/separator";
 import {
   Table,
   TableBody,
@@ -45,12 +58,20 @@ import {
 
 import { useAyamDashboard } from "@/components/ayam/use-ayam-dashboard";
 import { VideoFeed } from "@/components/ayam/video-feed";
+import { SettingsDialog } from "@/components/ayam/settings-dialog";
+import { SessionTrendChart } from "@/components/ayam/session-trend-chart";
+import { AnimatedNumber } from "@/components/ayam/animated-number";
 import { ayamApi } from "@/lib/ayam/api";
 import { dict, type Lang } from "@/lib/ayam/i18n";
 
 // =====================================================
 // SMALL BUILDING BLOCKS
 // =====================================================
+
+const fadeUp = {
+  initial: { opacity: 0, y: 14 },
+  animate: { opacity: 1, y: 0 },
+};
 
 function LiveDot({ active }: { active: boolean }) {
   return (
@@ -68,28 +89,33 @@ function StatCard({
   value,
   sub,
   accent,
+  glow,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: React.ReactNode;
   sub?: React.ReactNode;
   accent: string;
+  glow: string;
 }) {
   return (
-    <Card className="bg-zinc-900/60 border-zinc-800 hover:border-zinc-700 transition-colors">
+    <Card
+      className={`group relative overflow-hidden border-zinc-800 bg-zinc-900/60 transition-all duration-300 hover:-translate-y-0.5 hover:border-zinc-700 ${glow}`}
+    >
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-zinc-600 to-transparent" />
       <CardContent className="p-4 sm:p-5">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
               {label}
             </p>
-            <p className="mt-1.5 text-2xl sm:text-3xl font-bold tabular-nums text-zinc-50 truncate">
+            <p className="mt-1.5 truncate text-2xl font-bold tabular-nums text-zinc-50 sm:text-3xl">
               {value}
             </p>
             {sub ? <div className="mt-1 text-xs text-zinc-500">{sub}</div> : null}
           </div>
           <div
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${accent}`}
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-transform duration-300 group-hover:scale-110 ${accent}`}
           >
             <Icon className="h-5 w-5" />
           </div>
@@ -99,9 +125,9 @@ function StatCard({
   );
 }
 
-function ConnBadge({ mode, t }: { mode: ConnMode; t: (typeof dict)[Lang] }) {
+function ConnBadge({ mode, t }: { mode: string; t: (typeof dict)[Lang] }) {
   const map: Record<
-    ConnMode,
+    string,
     { cls: string; icon: React.ComponentType<{ className?: string }>; text: string }
   > = {
     connecting: {
@@ -125,7 +151,7 @@ function ConnBadge({ mode, t }: { mode: ConnMode; t: (typeof dict)[Lang] }) {
       text: "Offline",
     },
   };
-  const M = map[mode];
+  const M = map[mode] ?? map.connecting;
   const Icon = M.icon;
   return (
     <Badge variant="outline" className={`${M.cls} gap-1.5 px-2.5 py-1 font-medium`}>
@@ -140,7 +166,27 @@ function ConnBadge({ mode, t }: { mode: ConnMode; t: (typeof dict)[Lang] }) {
 // =====================================================
 
 export default function AyamCounterPage() {
-  const [lang, setLang] = useState<Lang>("id");
+  const [lang, setLangState] = useState<Lang>("id");
+
+  // Muat bahasa tersimpan (client only, hindari hydration mismatch)
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("ayam-lang");
+      if (saved === "id" || saved === "en") setLangState(saved);
+    } catch {
+      /* abaikan */
+    }
+  }, []);
+
+  const setLang = useCallback((l: Lang) => {
+    setLangState(l);
+    try {
+      window.localStorage.setItem("ayam-lang", l);
+    } catch {
+      /* abaikan */
+    }
+  }, []);
+
   const t = dict[lang];
 
   const {
@@ -148,6 +194,7 @@ export default function AyamCounterPage() {
     device,
     history,
     exports,
+    timeline,
     connMode,
     refreshSideData,
   } = useAyamDashboard();
@@ -159,6 +206,13 @@ export default function AyamCounterPage() {
   const [keterangan, setKeterangan] = useState("");
   const [busy, setBusy] = useState<"start" | "stop" | "reset" | null>(null);
 
+  // ----- history filter -----
+  const [historySearch, setHistorySearch] = useState("");
+  const [historyDate, setHistoryDate] = useState("");
+
+  // ----- milestone -----
+  const lastMilestoneRef = useRef(0);
+
   // default tanggal & jam (client only, hindari hydration mismatch)
   useEffect(() => {
     const now = new Date();
@@ -168,6 +222,52 @@ export default function AyamCounterPage() {
   }, []);
 
   const sessionActive = stats.session_active || stats.is_processing === true;
+
+  // ----- beep (WebAudio, tanpa asset) -----
+  const playBeep = useCallback(() => {
+    try {
+      const Ctx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext })
+          .webkitAudioContext;
+      const ctx = new Ctx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "sine";
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.1, ctx.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.5);
+      osc.onended = () => void ctx.close();
+    } catch {
+      /* audio diblokir browser — abaikan */
+    }
+  }, []);
+
+  // ----- milestone setiap kelipatan 10 -----
+  useEffect(() => {
+    const c = stats.count;
+    const STEP = 10;
+    if (c < lastMilestoneRef.current) {
+      // reset / sesi baru
+      lastMilestoneRef.current = c;
+      return;
+    }
+    const prevLevel = Math.floor(lastMilestoneRef.current / STEP);
+    const level = Math.floor(c / STEP);
+    if (c > 0 && level > prevLevel) {
+      const milestoneVal = level * STEP;
+      toast.success(`${milestoneVal} ${t.milestoneDesc}`, {
+        description: `🎯 ${t.milestone}`,
+      });
+      playBeep();
+    }
+    lastMilestoneRef.current = Math.max(lastMilestoneRef.current, c);
+  }, [stats.count, t, playBeep]);
 
   // ----- actions -----
   const handleStart = useCallback(async () => {
@@ -179,12 +279,16 @@ export default function AyamCounterPage() {
         jam: jam,
         keterangan: keterangan.trim(),
       });
+      lastMilestoneRef.current = 0;
       toast.success(t.sesiDimulai, {
         description: `${t.asalAyam}: ${asalAyam.trim() || "Unknown"}`,
       });
     } catch {
       toast.error(t.gagalStart, {
-        description: lang === "id" ? "Cek apakah backend Flask berjalan." : "Check if the Flask backend is running.",
+        description:
+          lang === "id"
+            ? "Cek apakah backend Flask berjalan."
+            : "Check if the Flask backend is running.",
       });
     } finally {
       setBusy(null);
@@ -197,7 +301,9 @@ export default function AyamCounterPage() {
       const res = await ayamApi.stopSession();
       toast.success(t.sesiDihentikan, {
         description: res.file
-          ? `${res.file.split("/").pop()} — ${stats.count} ${lang === "id" ? "ayam" : "chickens"}`
+          ? `${res.file.split("/").pop()} — ${stats.count} ${
+              lang === "id" ? "ayam" : "chickens"
+            }`
           : lang === "id"
             ? "Tidak ada data deteksi untuk disimpan"
             : "No detection data to save",
@@ -214,6 +320,7 @@ export default function AyamCounterPage() {
     setBusy("reset");
     try {
       await ayamApi.resetCounter();
+      lastMilestoneRef.current = 0;
       toast.info(t.counterDireset);
     } catch {
       toast.error(t.gagalReset);
@@ -224,6 +331,32 @@ export default function AyamCounterPage() {
 
   // ----- derived -----
   const daily = history.stats;
+
+  const weeklyData = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const h of history.history) {
+      if (!h.tanggal) continue;
+      map.set(h.tanggal, (map.get(h.tanggal) ?? 0) + (h.total_count ?? 0));
+    }
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    if (!map.has(todayStr)) map.set(todayStr, 0);
+    return Array.from(map.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .slice(-7)
+      .map(([d, total]) => ({ day: d.slice(5), total }));
+  }, [history]);
+
+  const filteredHistory = useMemo(() => {
+    const q = historySearch.trim().toLowerCase();
+    return history.history.filter((h) => {
+      const okSearch = !q || (h.asal_ayam ?? "").toLowerCase().includes(q);
+      const okDate = !historyDate || h.tanggal === historyDate;
+      return okSearch && okDate;
+    });
+  }, [history.history, historySearch, historyDate]);
+
   const sortedExports = useMemo(
     () => [...exports].sort((a, b) => b.modified - a.modified),
     [exports]
@@ -257,6 +390,7 @@ export default function AyamCounterPage() {
 
           <div className="flex items-center gap-2 sm:gap-3">
             <ConnBadge mode={connMode} t={t} />
+            <SettingsDialog t={t} />
             {/* Language toggle */}
             <div className="flex overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900 text-xs font-semibold">
               <button
@@ -289,11 +423,22 @@ export default function AyamCounterPage() {
       {/* ================= MAIN ================= */}
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-5 sm:px-6 sm:py-6">
         {/* ---- Stat cards ---- */}
-        <section aria-label="statistics" className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+        <motion.section
+          aria-label="statistics"
+          initial={fadeUp.initial}
+          animate={fadeUp.animate}
+          transition={{ duration: 0.35 }}
+          className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4"
+        >
           <StatCard
             icon={Bird}
             label={t.totalAyam}
-            value={stats.count.toLocaleString(lang === "id" ? "id-ID" : "en-US")}
+            value={
+              <AnimatedNumber
+                value={stats.count}
+                className={sessionActive ? "text-emerald-400" : undefined}
+              />
+            }
             sub={
               sessionActive ? (
                 <span className="inline-flex items-center gap-1.5 font-medium text-emerald-400">
@@ -306,6 +451,7 @@ export default function AyamCounterPage() {
               )
             }
             accent="bg-amber-500/15 text-amber-400"
+            glow="hover:shadow-[0_8px_32px_-12px_rgba(245,158,11,0.35)]"
           />
           <StatCard
             icon={ScanEye}
@@ -317,6 +463,7 @@ export default function AyamCounterPage() {
               </span>
             }
             accent="bg-emerald-500/15 text-emerald-400"
+            glow="hover:shadow-[0_8px_32px_-12px_rgba(16,185,129,0.35)]"
           />
           <StatCard
             icon={Gauge}
@@ -334,6 +481,7 @@ export default function AyamCounterPage() {
                 : `—`
             }
             accent="bg-sky-500/15 text-sky-400"
+            glow="hover:shadow-[0_8px_32px_-12px_rgba(14,165,233,0.35)]"
           />
           <StatCard
             icon={Cpu}
@@ -348,7 +496,9 @@ export default function AyamCounterPage() {
                   >
                     {device.verified ? "✓ verified" : "unverified"}
                   </Badge>
-                  {device.model_loaded ? t.modelTermuat : (
+                  {device.model_loaded ? (
+                    t.modelTermuat
+                  ) : (
                     <span className="text-red-400">{t.modelBelum}</span>
                   )}
                 </span>
@@ -357,11 +507,17 @@ export default function AyamCounterPage() {
               )
             }
             accent="bg-violet-500/15 text-violet-400"
+            glow="hover:shadow-[0_8px_32px_-12px_rgba(139,92,246,0.35)]"
           />
-        </section>
+        </motion.section>
 
         {/* ---- Video + session panel ---- */}
-        <section className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <motion.section
+          className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3"
+          initial={fadeUp.initial}
+          animate={fadeUp.animate}
+          transition={{ duration: 0.35, delay: 0.06 }}
+        >
           {/* ---------- Video feed ---------- */}
           <Card className="overflow-hidden border-zinc-800 bg-zinc-900/60 lg:col-span-2">
             <CardHeader className="pb-3">
@@ -371,9 +527,7 @@ export default function AyamCounterPage() {
                     <Camera className="h-4 w-4 text-amber-400" />
                     {t.feedLangsung}
                   </CardTitle>
-                  <CardDescription className="mt-1">
-                    {t.feedDeskripsi}
-                  </CardDescription>
+                  <CardDescription className="mt-1">{t.feedDeskripsi}</CardDescription>
                 </div>
                 <Badge
                   variant="outline"
@@ -491,7 +645,11 @@ export default function AyamCounterPage() {
 
               {/* active session info */}
               {sessionActive && stats.session_data?.asal_ayam ? (
-                <div className="rounded-lg border border-emerald-900/60 bg-emerald-950/40 p-3 text-xs">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.98 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="rounded-lg border border-emerald-900/60 bg-emerald-950/40 p-3 text-xs"
+                >
                   <p className="mb-1.5 flex items-center gap-1.5 font-semibold text-emerald-400">
                     <LiveDot active /> {t.aktifBerjalan}
                   </p>
@@ -521,7 +679,7 @@ export default function AyamCounterPage() {
                       </span>
                     </span>
                   </div>
-                </div>
+                </motion.div>
               ) : null}
 
               {/* action buttons */}
@@ -575,51 +733,103 @@ export default function AyamCounterPage() {
               </div>
             </CardContent>
           </Card>
-        </section>
+        </motion.section>
 
-        {/* ---- Daily summary cards ---- */}
-        <section className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Card className="border-zinc-800 bg-gradient-to-br from-zinc-900 to-zinc-900/40">
-            <CardContent className="flex items-center gap-4 p-5">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-400">
-                <History className="h-6 w-6" />
+        {/* ---- Charts row: trend + weekly ---- */}
+        <motion.section
+          className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2"
+          initial={fadeUp.initial}
+          animate={fadeUp.animate}
+          transition={{ duration: 0.35, delay: 0.12 }}
+        >
+          <SessionTrendChart
+            points={timeline}
+            total={stats.count}
+            active={sessionActive}
+            t={t}
+          />
+
+          {/* Weekly summary */}
+          <Card className="border-zinc-800 bg-zinc-900/60">
+            <CardHeader className="pb-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <History className="h-4 w-4 text-sky-400" />
+                    {t.ringkasan7hari}
+                  </CardTitle>
+                  <CardDescription className="mt-1">{t.ayamPerHari}</CardDescription>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Badge
+                    variant="outline"
+                    className="border-sky-900 bg-sky-950 px-2 py-1 text-[10px] font-semibold text-sky-400"
+                  >
+                    {t.hariIni}: {daily.total_sessions}
+                  </Badge>
+                  <Badge
+                    variant="outline"
+                    className="border-amber-900 bg-amber-950 px-2 py-1 text-[10px] font-semibold text-amber-400"
+                  >
+                    {t.totalHariIni}: {(daily.total_count ?? 0).toLocaleString()}
+                  </Badge>
+                </div>
               </div>
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">
-                  {t.hariIni}
-                </p>
-                <p className="text-2xl font-bold tabular-nums">
-                  {daily.total_sessions}
-                </p>
-              </div>
-              <Separator orientation="vertical" className="mx-1 hidden h-10 sm:block" />
-              <div className="hidden sm:block">
-                <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">
-                  {t.totalHariIni}
-                </p>
-                <p className="text-2xl font-bold tabular-nums text-amber-400">
-                  {(daily.total_count ?? 0).toLocaleString()}
-                </p>
+            </CardHeader>
+            <CardContent>
+              <div className="h-44 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={weeklyData} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="barFill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#38bdf8" stopOpacity={0.95} />
+                        <stop offset="100%" stopColor="#0ea5e9" stopOpacity={0.35} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid stroke="#27272a" strokeDasharray="3 3" vertical={false} />
+                    <XAxis
+                      dataKey="day"
+                      tick={{ fill: "#71717a", fontSize: 11 }}
+                      tickLine={false}
+                      axisLine={{ stroke: "#3f3f46" }}
+                    />
+                    <YAxis
+                      tick={{ fill: "#71717a", fontSize: 11 }}
+                      tickLine={false}
+                      axisLine={false}
+                      allowDecimals={false}
+                    />
+                    <ReTooltip
+                      cursor={{ fill: "#18181b", opacity: 0.6 }}
+                      contentStyle={{
+                        background: "#09090b",
+                        border: "1px solid #3f3f46",
+                        borderRadius: 8,
+                        fontSize: 12,
+                        color: "#f4f4f5",
+                      }}
+                      formatter={(value: number | string) => [value, t.totalAyam]}
+                    />
+                    <Bar
+                      dataKey="total"
+                      fill="url(#barFill)"
+                      radius={[4, 4, 0, 0]}
+                      maxBarSize={44}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
             </CardContent>
           </Card>
-          <Card className="border-zinc-800 bg-gradient-to-br from-zinc-900 to-zinc-900/40">
-            <CardContent className="flex items-center gap-4 p-5">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-400">
-                <FileSpreadsheet className="h-6 w-6" />
-              </div>
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">
-                  {t.fileExcel}
-                </p>
-                <p className="text-2xl font-bold tabular-nums">{exports.length}</p>
-              </div>
-            </CardContent>
-          </Card>
-        </section>
+        </motion.section>
 
         {/* ---- Hardware + Exports ---- */}
-        <section className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <motion.section
+          className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2"
+          initial={fadeUp.initial}
+          animate={fadeUp.animate}
+          transition={{ duration: 0.35, delay: 0.18 }}
+        >
           {/* Hardware detail */}
           <Card className="border-zinc-800 bg-zinc-900/60">
             <CardHeader className="pb-3">
@@ -695,11 +905,21 @@ export default function AyamCounterPage() {
           {/* Exports list */}
           <Card className="border-zinc-800 bg-zinc-900/60">
             <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <FileSpreadsheet className="h-4 w-4 text-emerald-400" />
-                {t.fileExcel}
-              </CardTitle>
-              <CardDescription>{t.fileExcelDesc}</CardDescription>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <FileSpreadsheet className="h-4 w-4 text-emerald-400" />
+                    {t.fileExcel}
+                  </CardTitle>
+                  <CardDescription className="mt-1">{t.fileExcelDesc}</CardDescription>
+                </div>
+                <Badge
+                  variant="outline"
+                  className="border-emerald-900 bg-emerald-950 px-2 py-1 text-[10px] font-semibold text-emerald-400"
+                >
+                  {exports.length} file
+                </Badge>
+              </div>
             </CardHeader>
             <CardContent>
               {sortedExports.length === 0 ? (
@@ -728,32 +948,87 @@ export default function AyamCounterPage() {
                           </p>
                         </div>
                       </div>
-                      <a
-                        href={ayamApi.downloadUrl(f.name)}
-                        download
-                        className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900 px-3 text-xs font-semibold text-zinc-300 transition-colors hover:border-amber-500/50 hover:bg-amber-500 hover:text-zinc-950"
-                        aria-label={`${t.unduh} ${f.name}`}
-                      >
-                        <Download className="h-3.5 w-3.5" />
-                        <span className="hidden sm:inline">{t.unduh}</span>
-                      </a>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <a
+                          href={ayamApi.csvUrl(f.name)}
+                          download
+                          title={t.unduhCsv}
+                          aria-label={`${t.unduhCsv} ${f.name}`}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-zinc-800 bg-zinc-900 text-zinc-400 transition-colors hover:border-sky-500/50 hover:bg-sky-500 hover:text-zinc-950"
+                        >
+                          <FileDown className="h-4 w-4" />
+                        </a>
+                        <a
+                          href={ayamApi.downloadUrl(f.name)}
+                          download
+                          className="inline-flex h-9 items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900 px-3 text-xs font-semibold text-zinc-300 transition-colors hover:border-amber-500/50 hover:bg-amber-500 hover:text-zinc-950"
+                          aria-label={`${t.unduh} ${f.name}`}
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          <span className="hidden sm:inline">{t.unduh}</span>
+                        </a>
+                      </div>
                     </div>
                   ))}
                 </div>
               )}
             </CardContent>
           </Card>
-        </section>
+        </motion.section>
 
         {/* ---- History table ---- */}
-        <section className="mt-4">
+        <motion.section
+          className="mt-4"
+          initial={fadeUp.initial}
+          animate={fadeUp.animate}
+          transition={{ duration: 0.35, delay: 0.24 }}
+        >
           <Card className="border-zinc-800 bg-zinc-900/60">
             <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <History className="h-4 w-4 text-sky-400" />
-                {t.riwayatSesi}
-              </CardTitle>
-              <CardDescription>{t.riwayatDesc}</CardDescription>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <History className="h-4 w-4 text-sky-400" />
+                    {t.riwayatSesi}
+                  </CardTitle>
+                  <CardDescription className="mt-1">{t.riwayatDesc}</CardDescription>
+                </div>
+                {/* filter controls */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-600" />
+                    <Input
+                      value={historySearch}
+                      onChange={(e) => setHistorySearch(e.target.value)}
+                      placeholder={t.cariRiwayat}
+                      className="h-9 w-44 border-zinc-800 bg-zinc-950 pl-8 text-xs text-zinc-100 placeholder:text-zinc-600 focus-visible:ring-amber-500"
+                    />
+                  </div>
+                  <Input
+                    type="date"
+                    value={historyDate}
+                    onChange={(e) => setHistoryDate(e.target.value)}
+                    aria-label={t.filterTanggal}
+                    className="h-9 w-36 border-zinc-800 bg-zinc-950 text-xs text-zinc-100 [color-scheme:dark] focus-visible:ring-amber-500"
+                  />
+                  {historySearch || historyDate ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setHistorySearch("");
+                        setHistoryDate("");
+                      }}
+                      className="h-9 px-2 text-xs text-zinc-400 hover:text-zinc-200"
+                    >
+                      {t.tampilkanSemua}
+                    </Button>
+                  ) : null}
+                  <Badge variant="outline" className="border-zinc-800 px-2 py-1 text-[10px] text-zinc-500">
+                    {filteredHistory.length} {t.hasilFilter}
+                  </Badge>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               {history.history.length === 0 ? (
@@ -761,6 +1036,13 @@ export default function AyamCounterPage() {
                   <History className="h-8 w-8 text-zinc-700" />
                   <p className="text-sm font-medium text-zinc-400">{t.belumAdaRiwayat}</p>
                   <p className="text-xs text-zinc-600">{t.belumAdaRiwayatDesc}</p>
+                </div>
+              ) : filteredHistory.length === 0 ? (
+                <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-800 py-10 text-center">
+                  <Search className="h-8 w-8 text-zinc-700" />
+                  <p className="text-sm font-medium text-zinc-400">
+                    {lang === "id" ? "Tidak ada hasil" : "No results"}
+                  </p>
                 </div>
               ) : (
                 <div className="ayam-scroll max-h-96 overflow-y-auto rounded-lg border border-zinc-800">
@@ -780,7 +1062,7 @@ export default function AyamCounterPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {history.history.map((h) => (
+                      {filteredHistory.map((h) => (
                         <TableRow
                           key={h.id}
                           className="border-zinc-800/70 hover:bg-zinc-900/70"
@@ -811,7 +1093,7 @@ export default function AyamCounterPage() {
               )}
             </CardContent>
           </Card>
-        </section>
+        </motion.section>
       </main>
 
       {/* ================= FOOTER (sticky bottom) ================= */}

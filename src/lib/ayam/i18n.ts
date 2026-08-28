@@ -87,6 +87,39 @@ export const dict = {
     bingkai: "Bingkai",
     sumberKamera: "Sumber",
     fileVideo: "File video (loop)",
+    // Settings dialog
+    pengaturan: "Pengaturan Deteksi",
+    pengaturanDesc: "Parameter langsung aktif & tersimpan ke .env",
+    confidenceLabel: "Confidence Threshold",
+    countLineLabel: "Posisi Garis Hitung (px)",
+    zoneLabel: "Lebar Zona Deteksi (px)",
+    simpan: "Terapkan",
+    menyimpan: "Menyimpan...",
+    pengaturanTersimpan: "Pengaturan diterapkan & disimpan",
+    gagalSimpan: "Gagal menyimpan pengaturan",
+    bukaPengaturan: "Buka pengaturan deteksi",
+    hintConfidence: "Semakin tinggi, semakin sedikit deteksi namun lebih akurat",
+    hintCountLine: "Objek dihitung saat center melewati garis vertikal ini",
+    hintZone: "Buffer di sekitar garis untuk mencegah hitungan ganda",
+    // Trend chart
+    trenSesi: "Tren Kumulatif Sesi",
+    trenSesiDesc: "Pertumbuhan jumlah ayam terhitung selama sesi berjalan",
+    detik: "detik",
+    belumAdaTren: "Belum ada data tren",
+    belumAdaTrenDesc: "Grafik muncul saat sesi penghitungan berjalan",
+    // Weekly chart
+    ringkasan7hari: "Ringkasan 7 Hari",
+    ayamPerHari: "Ayam/hari",
+    // Milestone
+    milestone: "Milestone tercapai!",
+    milestoneDesc: "ayam telah terhitung",
+    // History filter
+    cariRiwayat: "Cari asal ayam...",
+    filterTanggal: "Semua tanggal",
+    tampilkanSemua: "Tampilkan semua",
+    hasilFilter: "hasil",
+    // CSV
+    unduhCsv: "Unduh CSV",
   },
   en: {
     appName: "Ayam Counter Pro",
@@ -161,6 +194,39 @@ export const dict = {
     bingkai: "Frame",
     sumberKamera: "Source",
     fileVideo: "Video file (loop)",
+    // Settings dialog
+    pengaturan: "Detection Settings",
+    pengaturanDesc: "Parameters apply instantly & are saved to .env",
+    confidenceLabel: "Confidence Threshold",
+    countLineLabel: "Count Line Position (px)",
+    zoneLabel: "Detection Zone Width (px)",
+    simpan: "Apply",
+    menyimpan: "Saving...",
+    pengaturanTersimpan: "Settings applied & saved",
+    gagalSimpan: "Failed to save settings",
+    bukaPengaturan: "Open detection settings",
+    hintConfidence: "Higher means fewer detections but more accurate",
+    hintCountLine: "Objects are counted when their center crosses this vertical line",
+    hintZone: "Buffer around the line to prevent double counting",
+    // Trend chart
+    trenSesi: "Session Cumulative Trend",
+    trenSesiDesc: "Growth of counted chickens during the running session",
+    detik: "sec",
+    belumAdaTren: "No trend data yet",
+    belumAdaTrenDesc: "Chart appears while a counting session is running",
+    // Weekly chart
+    ringkasan7hari: "7-Day Summary",
+    ayamPerHari: "Chickens/day",
+    // Milestone
+    milestone: "Milestone reached!",
+    milestoneDesc: "chickens have been counted",
+    // History filter
+    cariRiwayat: "Search chicken origin...",
+    filterTanggal: "All dates",
+    tampilkanSemua: "Show all",
+    hasilFilter: "results",
+    // CSV
+    unduhCsv: "Download CSV",
   },
 } as const;
 
