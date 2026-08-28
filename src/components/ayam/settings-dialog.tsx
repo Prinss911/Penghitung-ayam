@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { ayamApi, type RuntimeSettings } from "@/lib/ayam/api";
+import { ayamApi, PinRequiredError, type RuntimeSettings } from "@/lib/ayam/api";
 import type { Dict } from "@/lib/ayam/i18n";
 
 interface SettingsDialogProps {
@@ -83,8 +83,11 @@ export function SettingsDialog({ t, onSaved }: SettingsDialogProps) {
       toast.success(t.pengaturanTersimpan);
       onSaved?.();
       setOpen(false);
-    } catch {
-      toast.error(t.gagalSimpan);
+    } catch (e) {
+      // Gate PIN sudah dibuka otomatis via event global dari api.ts
+      if (!(e instanceof PinRequiredError)) {
+        toast.error(t.gagalSimpan);
+      }
     } finally {
       setSaving(false);
     }

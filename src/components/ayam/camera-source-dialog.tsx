@@ -33,7 +33,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { ayamApi, type CameraSourceInfo } from "@/lib/ayam/api";
+import { ayamApi, PinRequiredError, type CameraSourceInfo } from "@/lib/ayam/api";
 import type { Dict } from "@/lib/ayam/i18n";
 
 interface CameraSourceDialogProps {
@@ -101,6 +101,10 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
         setOpen(false);
         onSaved?.();
       } catch (e) {
+        if (e instanceof PinRequiredError) {
+          toast.info(t.pinDibutuhkan);
+          return;
+        }
         const msg = e instanceof Error ? e.message : "";
         toast.error(t.gagalSumber, {
           description: msg.includes("400")
@@ -125,6 +129,10 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
       setDeleteVideoName(null);
       await load();
     } catch (e) {
+      if (e instanceof PinRequiredError) {
+        toast.info(t.pinDibutuhkan);
+        return;
+      }
       const msg = e instanceof Error ? e.message : "";
       toast.error(t.gagalHapusVideo, {
         description: msg.includes("400") ? t.videoAktifWarning : undefined,
@@ -155,6 +163,10 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
         await load();
         onSaved?.();
       } catch (e) {
+        if (e instanceof PinRequiredError) {
+          toast.info(t.pinDibutuhkan);
+          return;
+        }
         toast.error(t.unggahGagal, {
           description: e instanceof Error ? e.message : undefined,
         });

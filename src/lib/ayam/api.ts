@@ -125,13 +125,91 @@ export interface TimelineResponse {
   error?: string;
 }
 
+export interface PinStatus {
+  enabled: boolean;
+  is_default: boolean;
+}
+
+// =====================================================
+// OPERATOR PIN (sessionStorage per-tab; dikirim otomatis)
+// =====================================================
+
+const PIN_KEY = "ayam-pin";
+
+/** Error khusus bila backend meminta PIN (401 pin_required) */
+export class PinRequiredError extends Error {
+  constructor() {
+    super("PIN required");
+    this.name = "PinRequiredError";
+  }
+}
+
+export function getStoredPin(): string {
+  try {
+    return window.sessionStorage.getItem(PIN_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function setStoredPin(pin: string) {
+  try {
+    window.sessionStorage.setItem(PIN_KEY, pin);
+  } catch {
+    /* abaikan */
+  }
+}
+
+export function clearStoredPin() {
+  try {
+    window.sessionStorage.removeItem(PIN_KEY);
+  } catch {
+    /* abaikan */
+  }
+}
+
+/** Buka gate PIN secara global (didengarkan di page.tsx) */
+export function requestPinUnlock() {
+  try {
+    window.dispatchEvent(new CustomEvent("ayam:pin-required"));
+  } catch {
+    /* abaikan */
+  }
+}
+
+function pinHeaders(): Record<string, string> {
+  const pin = getStoredPin();
+  return pin ? { "X-Operator-Pin": pin } : {};
+}
+
+/** Parse response JSON aman (body mungkin bukan JSON) */
+async function safeJson(res: Response): Promise<Record<string, unknown> | null> {
+  try {
+    return (await res.json()) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
 // =====================================================
 // API FUNCTIONS
 // =====================================================
 
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, { cache: "no-store", ...init });
+  const res = await fetch(url, {
+    cache: "no-store",
+    ...init,
+    headers: { ...pinHeaders(), ...(init?.headers ?? {}) },
+  });
   if (!res.ok) {
+    // Backend meminta PIN operator → lempar error khusus + buka gate global
+    if (res.status === 401) {
+      const body = await safeJson(res);
+      if (body && body["error"] === "pin_required") {
+        requestPinUnlock();
+        throw new PinRequiredError();
+      }
+    }
     throw new Error(`HTTP ${res.status} on ${url}`);
   }
   return res.json() as Promise<T>;
@@ -212,6 +290,29 @@ export const ayamApi = {
   dailyReportUrl: (date: string) =>
     bp(`/api/report/daily?date=${encodeURIComponent(date)}`),
 
+  /** URL unduh laporan rentang tanggal PDF (mingguan/bulanan) */
+  rangeReportUrl: (from: string, to: string) =>
+    bp(`/api/report/range?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
+
+  /** Status proteksi PIN backend */
+  getPinStatus: () => jsonFetch<PinStatus>(bp("/api/pin")),
+
+  /** Verifikasi PIN (gate) — 401 bila salah */
+  verifyPin: (pin: string) =>
+    jsonFetch<{ valid: boolean }>(bp("/api/pin/verify"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin }),
+    }),
+
+  /** Ubah PIN dan/atau aktif/nonaktif proteksi (wajib current_pin) */
+  updatePin: (data: { current_pin: string; new_pin?: string; enabled?: boolean }) =>
+    jsonFetch<{ status: string; enabled: boolean }>(bp("/api/pin"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+
   /** Unggah video (multipart) → disimpan di server + langsung jadi sumber kamera.
    *  Pakai XHR agar bisa melaporkan progres unggah. */
   uploadCameraVideo: (file: File, onProgress?: (pct: number) => void) =>
@@ -219,6 +320,8 @@ export const ayamApi = {
       (resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("POST", bp("/api/camera-source/upload"));
+        const stored = getStoredPin();
+        if (stored) xhr.setRequestHeader("X-Operator-Pin", stored);
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable && onProgress) {
             onProgress(Math.round((e.loaded / e.total) * 100));
@@ -229,6 +332,9 @@ export const ayamApi = {
             const data = JSON.parse(xhr.responseText);
             if (xhr.status >= 200 && xhr.status < 300 && data.status === "ok") {
               resolve(data);
+            } else if (xhr.status === 401 && data.error === "pin_required") {
+              requestPinUnlock();
+              reject(new PinRequiredError());
             } else {
               reject(new Error(data.message ?? `HTTP ${xhr.status}`));
             }

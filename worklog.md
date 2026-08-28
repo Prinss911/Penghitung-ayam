@@ -246,3 +246,63 @@ Rekomendasi ronde berikutnya (prioritas):
 3. Ekspor laporan rentang tanggal (mingguan/bulanan) dari filter riwayat.
 4. Toast suara berbeda untuk koreksi manual (bedakan dari milestone).
 5. Uji upload video besar via preview + indikator "menyiapkan video" saat capture switch.
+
+---
+Task ID: 6
+Agent: Z.ai Code (cron webDevReview ronde 6)
+Date: 2026-08-28
+Task: QA berkala + assessment; fokus ronde: autentikasi PIN operator (rekomendasi #1 ronde 5), laporan rentang tanggal PDF (#3), distribusi per jam di laporan harian (#2), suara koreksi berbeda (#4), styling polish.
+
+Work Log:
+- QA awal: semua layanan sehat (Next :3000, Flask :5000 PID 18551 via /api/ayam-backend, gateway :81), dashboard render bersih TANPA error console (dark, ID). v2.5 stabil → lanjut fitur baru.
+
+BACKEND (app/app.py + config.py + .env + services/database.py):
+- PIN OPERATOR: Config.OPERATOR_PIN (default 1234) + Config.PIN_ENABLED (default true), persist ke .env via _update_env_file.
+  • _pin_guard(): cek header 'X-Operator-Pin' vs Config; PIN_ENABLED=false → semua mutasi bebas.
+  • 9 route mutasi kini terproteksi: session/start, session/stop, reset, count/adjust, DELETE history/<id>, POST settings, POST camera-source, POST camera-source/upload, DELETE camera-source/video → 401 {"error":"pin_required"} tanpa PIN valid.
+  • GET /api/pin (status: enabled + is_default), POST /api/pin/verify (gate), POST /api/pin (ubah PIN 4-8 digit &/or enabled; wajib current_pin benar → else 403).
+- LAPORAN PDF refactor: _durasi_str + _rl_bar_chart (helper grafik batang reusable, maks 48 bar, warna/label size configurable) + _build_report_pdf (ringkasan 4 kotak + chart sections + tabel sesi + footer) + _pdf_response.
+  • /api/report/daily: kini 2 grafik — "Ayam per Sesi" + BARU "Distribusi per Jam (00–23)" (sky blue, akumulasi total per jam dari kolom jam).
+  • BARU /api/report/range?from&to: PDF rentang (mingguan/bulanan) — grafik "Ayam per Hari" (zero-fill s/d 62 hari, emerald) + "Ayam per Sesi" (bila ≤48 sesi) + ringkasan + tabel. Validasi: format tanggal, from<=to.
+- database.py: metode baru get_sessions_by_range(from, to).
+
+FRONTEND:
+- api.ts: PinRequiredError class, getStoredPin/setStoredPin/clearStoredPin (sessionStorage 'ayam-pin', per-tab), requestPinUnlock() (CustomEvent 'ayam:pin-required'), jsonFetch auto-attach X-Operator-Pin + deteksi 401 pin_required → throw PinRequiredError + dispatch event; upload XHR juga kirim header + deteksi 401; endpoint baru getPinStatus/verifyPin/updatePin/rangeReportUrl.
+- pin-dialog.tsx (BARU): PinGateDialog (gate modal: input password font-mono tracking-lebar, error shake framer-motion + border merah + toast, Enter submit, autofocus; sukses → setStoredPin + onSuccess SEBELUM onOpenChange(false) — urutan krusial agar retry tidak ke-null) + PinManagerDialog (trigger shield di header: hijau saat aktif; badge PIN AKTIF/PIN NONAKTIF, warning "masih default (1234)", Switch enable/disable, form ganti PIN (current+new), prefill current dari sessionStorage, info keamanan).
+- range-report-dialog.tsx (BARU): trigger violet di header Riwayat; dialog from/to date + preset cepat (7/14/30 hari, Bulan ini) + validasi from>to + unduh via anchor sementara.
+- page.tsx: PIN gate terpusat — guardedAction() wrapper (catch PinRequiredError → simpan aksi di pendingActionRef → buka gate); PinGateDialog onSuccess menangkap retry (setTimeout 120ms) → sesi lanjot otomatis setelah unlock; listener event 'ayam:pin-required' untuk aksi dari dialog lain; 5 handler (start/stop/reset/adjust/delete) re-throw PinRequiredError dari catch; PinManagerDialog di header; RangeReportDialog di header riwayat.
+- Suara koreksi manual kini BERBEDA dari milestone: makeBeep([520,390]) dua nada rendah vs milestone 880Hz tunggal (refactor playBeep → makeBeep(freqs) reusable, ctx.close() via onended nada terakhir).
+- STYLING: background depth baru (fixed layer: radial glow amber kiri-atas + emerald kanan-atas + grid halus 34px + mask fade bawah), garis aksen gradasi amber di bawah header, main & footer naik ke z-10 di atas layer bg; footer dot separator kecil.
+- settings-dialog & camera-source-dialog: catch PinRequiredError → toast info (tanpa error palsu); gate terbuka otomatis via event global.
+
+BUG DITEMUKAN & DIPERBAIKI:
+- BUG #1 (next.config.ts): /api/pin & /api/pin/verify TIDAK ada di FLASK_PROXY_ROUTES → saat dashboard dibuka dari :3000 langsung, verify fetch dapat HTML 404 Next.js → jsonFetch gagal parse → gate selalu bilang "PIN salah" walau benar. Fix: tambah 2 rewrite. (Via Caddy :81 tidak kena karena gateway langsung routing.)
+- BUG #2 (pin-dialog.tsx): onSuccess dipanggil SETELAH onOpenChange(false) → parent sudah men-null-kan pendingActionRef → retry tidak pernah jalan (sesi tidak start otomatis setelah unlock). Fix: onSuccess() dulu, baru onOpenChange(false).
+
+VERIFIKASI (agent-browser E2E + curl):
+- curl: 401 tanpa PIN / PIN salah pada semua mutasi; 200 dengan PIN benar; /api/pin status; verify 401/200; ubah PIN → .env tertulis; disable → mutasi bebas; enable lagi; restore 1234.
+- UI E2E penuh: Mulai Hitung tanpa PIN → gate modal + toast info → PIN salah 9999 → shake + error inline + toast → PIN 1234 → gate tutup → sesi "Farm PIN Test R6" LANGSUNG start (retry otomatis) → counter live 1→3→4 → Hentikan → tersimpan #17 → hapus via UI (dengan PIN tersimpan) → hilang. PinManagerDialog: ubah PIN 5678 (UI) → .env OPERATOR_PIN=5678 + old 401 + new 200 → disable switch → mutasi bebas (curl 200) → enable + restore 1234.
+- Range Report: preset 30 hari → from/to benar → Buat Laporan → PDF 4.4KB valid (pypdf OK). Daily PDF kini 2 grafik (distribusi jam terbaca 00-23 dengan nilai 15/16/17/20/21).
+- EN penuh (Operator Lock / PIN ON / Change PIN / Range Report), light theme render benar, mobile 390px OK (badge teks hidden, grid 2 kolom).
+- bun run lint → 0 error. Console browser bersih.
+- Data uji: sesi QA dihapus semua (#16-#18); tersisa 6 sesi demo (15/129 Farm Adjust QA dst). Sampel PDF: /home/z/my-project/download/laporan_harian_2026-08-28_v6_distribusi_jam.pdf + laporan_rentang_30hari_v6.pdf.
+
+Stage Summary:
+- Dashboard v2.6: PIN operator protection menyeluruh (9 route backend + gate UI + manager + auto-header + auto-retry), laporan rentang tanggal PDF, distribusi per jam di laporan harian, suara koreksi khusus, styling background depth + header accent.
+- Backend: 3 endpoint PIN baru + 1 endpoint range report + refactor PDF builder + guard di 9 route + 1 metode DB.
+- Frontend: 2 komponen baru (pin-dialog, range-report-dialog) + refaktor api.ts (PIN header otomatis + PinRequiredError) + i18n 27 kunci baru ID/EN.
+- Nilai .env kini: CONFIDENCE_THRESHOLD=0.25, COUNT_LINE_POSITION=112, ZONE_WIDTH=100, CAMERA_SOURCE=video_shackle_berisi.mp4, OPERATOR_PIN=1234, PIN_ENABLED=true.
+
+Risiko / catatan:
+- PIN disimpan di sessionStorage browser sandbox → preview user baru harus unlock sekali per tab (by design, aman untuk terminal bersama).
+- Restart backend memuat ulang .env → PIN kembali ke nilai .env (persist OK karena tiap perubahan ditulis ke .env).
+- Grafik "Ayam per Sesi" di range report dibatasi 48 sesi; distribusi jam pakai kolom `jam` (bukan start_time ISO) — sesi tanpa jam terlewat dari grafik jam (tetap masuk tabel).
+- Light theme: layer bg glow/grid memakai rgba putih transparan — di light mode grid nyaris tak terlihat (kosmetik, dapat diabaikan).
+- Total counter backend tidak auto-reset setelah stop sesi (perilaku lama) — kartu "Total Ayam" menampakkan sisa count sesi terakhir sampai Reset/Sesi baru. Bisa jadi perbaikan ronde berikutnya.
+
+Rekomendasi ronde berikutnya (prioritas):
+1. Auto-reset tampilan count setelah sesi stop (atau tampilkan count sesi terakhir sebagai sub-label).
+2. Rate-limit /api/pin/verify (anti brute-force) + delay progresif setelah N gagal.
+3. Audit log aksi terproteksi (siapa kapan start/stop/hapus, simpan ke tabel baru).
+4. Halaman pengaturan kamera RTSP profile tersimpan (multi-kamera preset).
+5. Uji upload video besar (100-300 MB) via preview gateway + indikator "menyiapkan video" saat capture switch.

@@ -84,7 +84,13 @@ import { SessionTrendChart } from "@/components/ayam/session-trend-chart";
 import { SessionDetailDialog } from "@/components/ayam/session-detail-dialog";
 import { ThemeToggle } from "@/components/ayam/theme-toggle";
 import { AnimatedNumber } from "@/components/ayam/animated-number";
-import { ayamApi, type HistoryItem } from "@/lib/ayam/api";
+import { PinGateDialog, PinManagerDialog } from "@/components/ayam/pin-dialog";
+import { RangeReportDialog } from "@/components/ayam/range-report-dialog";
+import {
+  ayamApi,
+  PinRequiredError,
+  type HistoryItem,
+} from "@/lib/ayam/api";
 import { dict, type Lang } from "@/lib/ayam/i18n";
 
 // =====================================================
@@ -254,6 +260,45 @@ export default function AyamCounterPage() {
   const [deleteTarget, setDeleteTarget] = useState<HistoryItem | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
 
+  // ----- PIN gate (aksi terproteksi) -----
+  const [pinGateOpen, setPinGateOpen] = useState(false);
+  // Aksi yang ditunda karena 401 pin_required → diulang setelah PIN benar
+  const pendingActionRef = useRef<(() => void) | null>(null);
+
+  /** Bungkus aksi mutasi: bila backend minta PIN, tunda & buka gate */
+  const guardedAction = useCallback(
+    (fn: () => Promise<void>) =>
+      async () => {
+        try {
+          await fn();
+        } catch (e) {
+          if (e instanceof PinRequiredError) {
+            pendingActionRef.current = () => void fn();
+            setPinGateOpen(true);
+            toast.info(t.pinDibutuhkan);
+            return;
+          }
+          throw e;
+        }
+      },
+    [t]
+  );
+
+  // Event global dari api.ts (aksi di dialog lain juga membuka gate ini)
+  useEffect(() => {
+    const onPinRequired = () => {
+      setPinGateOpen(true);
+      toast.info(t.pinDibutuhkan);
+    };
+    try {
+      window.addEventListener("ayam:pin-required", onPinRequired);
+      return () =>
+        window.removeEventListener("ayam:pin-required", onPinRequired);
+    } catch {
+      /* abaikan */
+    }
+  }, [t]);
+
   // ----- milestone & self-healing toast -----
   const lastMilestoneRef = useRef(0);
   // Tandai observasi count pertama agar toast milestone tidak meledak saat
@@ -348,29 +393,49 @@ export default function AyamCounterPage() {
   }, [connMode, t]);
 
   // ----- beep (WebAudio, tanpa asset) -----
-  const playBeep = useCallback(() => {
-    try {
-      const Ctx =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext })
-          .webkitAudioContext;
-      const ctx = new Ctx();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.type = "sine";
-      osc.frequency.value = 880;
-      gain.gain.setValueAtTime(0.001, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.1, ctx.currentTime + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.5);
-      osc.onended = () => void ctx.close();
-    } catch {
-      /* audio diblokir browser — abaikan */
-    }
-  }, []);
+  const makeBeep = useCallback(
+    (freqs: number[], durPer = 0.12, gap = 0.02) => {
+      try {
+        const Ctx =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext })
+            .webkitAudioContext;
+        const ctx = new Ctx();
+        let t0 = ctx.currentTime;
+        let lastOsc: OscillatorNode | null = null;
+        for (const f of freqs) {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.type = "sine";
+          osc.frequency.value = f;
+          gain.gain.setValueAtTime(0.001, t0);
+          gain.gain.exponentialRampToValueAtTime(0.09, t0 + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.001, t0 + durPer);
+          osc.start(t0);
+          osc.stop(t0 + durPer + 0.02);
+          lastOsc = osc;
+          t0 += durPer + gap;
+        }
+        if (lastOsc) {
+          lastOsc.onended = () => void ctx.close();
+        } else {
+          void ctx.close();
+        }
+      } catch {
+        /* audio diblokir browser — abaikan */
+      }
+    },
+    []
+  );
+
+  const playBeep = useCallback(() => makeBeep([880], 0.45), [makeBeep]);
+  // Bunyi koreksi manual: dua nada rendah (beda dari milestone)
+  const playCorrectionBeep = useCallback(
+    () => makeBeep([520, 390], 0.1, 0.05),
+    [makeBeep]
+  );
 
   // ----- milestone setiap kelipatan 10 -----
   useEffect(() => {
@@ -438,7 +503,8 @@ export default function AyamCounterPage() {
       toast.success(t.sesiDimulai, {
         description: `${t.asalAyam}: ${asalAyam.trim() || "Unknown"}`,
       });
-    } catch {
+    } catch (e) {
+      if (e instanceof PinRequiredError) throw e; // ditangani guardedAction
       toast.error(t.gagalStart, {
         description:
           lang === "id"
@@ -464,7 +530,8 @@ export default function AyamCounterPage() {
             : "No detection data to save",
       });
       refreshSideData();
-    } catch {
+    } catch (e) {
+      if (e instanceof PinRequiredError) throw e; // ditangani guardedAction
       toast.error(t.gagalStop);
     } finally {
       setBusy(null);
@@ -477,7 +544,8 @@ export default function AyamCounterPage() {
       await ayamApi.resetCounter();
       lastMilestoneRef.current = 0;
       toast.info(t.counterDireset);
-    } catch {
+    } catch (e) {
+      if (e instanceof PinRequiredError) throw e; // ditangani guardedAction
       toast.error(t.gagalReset);
     } finally {
       setBusy(null);
@@ -493,8 +561,10 @@ export default function AyamCounterPage() {
         toast.success(`${res.count} ${t.totalAyam.toLowerCase()}`, {
           description: `${t.koreksiBerhasil} (${delta > 0 ? "+1" : "−1"})`,
         });
+        playCorrectionBeep(); // bunyi khusus beda dari milestone
         await refreshStats();
       } catch (e) {
+        if (e instanceof PinRequiredError) throw e; // ditangani guardedAction
         toast.error(t.koreksiGagal, {
           description:
             e instanceof Error && e.message.includes("400")
@@ -507,7 +577,7 @@ export default function AyamCounterPage() {
         setAdjustBusy(null);
       }
     },
-    [t, lang, refreshStats]
+    [t, lang, refreshStats, playCorrectionBeep]
   );
 
   // ----- hapus sesi riwayat -----
@@ -523,7 +593,8 @@ export default function AyamCounterPage() {
       });
       setDeleteTarget(null);
       refreshSideData();
-    } catch {
+    } catch (e) {
+      if (e instanceof PinRequiredError) throw e; // ditangani guardedAction
       toast.error(t.gagalHapus);
     } finally {
       setDeleteBusy(false);
@@ -589,9 +660,32 @@ export default function AyamCounterPage() {
         : "bg-zinc-800 text-zinc-300 border-zinc-700";
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
+    <div className="relative flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
+      {/* ==== Background depth: glow atas + grid halus ==== */}
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-0 z-0"
+        style={{
+          background:
+            "radial-gradient(900px 380px at 18% -8%, rgba(245,158,11,0.07), transparent 62%)," +
+            "radial-gradient(760px 340px at 88% -6%, rgba(16,185,129,0.05), transparent 60%)," +
+            "linear-gradient(to bottom, rgba(255,255,255,0.02) 1px, transparent 1px)," +
+            "linear-gradient(to right, rgba(255,255,255,0.02) 1px, transparent 1px)",
+          backgroundSize: "auto, auto, 34px 34px, 34px 34px",
+          maskImage:
+            "linear-gradient(to bottom, black 0%, black 55%, transparent 96%)",
+          WebkitMaskImage:
+            "linear-gradient(to bottom, black 0%, black 55%, transparent 96%)",
+        }}
+      />
+
       {/* ================= HEADER ================= */}
       <header className="sticky top-0 z-50 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur supports-[backdrop-filter]:bg-zinc-950/60">
+        {/* garis aksen gradasi di bawah header */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 -bottom-px h-px bg-gradient-to-r from-transparent via-amber-500/50 to-transparent"
+        />
         <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-zinc-950 shadow-lg shadow-amber-500/20">
@@ -610,6 +704,7 @@ export default function AyamCounterPage() {
           <div className="flex items-center gap-2 sm:gap-3">
             <ConnBadge mode={connMode} t={t} />
             <SettingsDialog t={t} onSaved={refreshDevice} />
+            <PinManagerDialog t={t} />
             <Button
               variant="outline"
               size="icon"
@@ -656,7 +751,7 @@ export default function AyamCounterPage() {
       </header>
 
       {/* ================= MAIN ================= */}
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-5 sm:px-6 sm:py-6">
+      <main className="relative z-10 mx-auto w-full max-w-7xl flex-1 px-4 py-5 sm:px-6 sm:py-6">
         {/* ---- Stat cards ---- */}
         <motion.section
           aria-label="statistics"
@@ -969,7 +1064,7 @@ export default function AyamCounterPage() {
                           aria-label={t.koreksiMin}
                           title={t.koreksiMin}
                           disabled={adjustBusy !== null}
-                          onClick={() => void handleAdjust(-1)}
+                          onClick={() => void guardedAction(() => handleAdjust(-1))()}
                           className="h-8 w-8 border-emerald-800 bg-emerald-950/60 p-0 text-emerald-300 transition-all hover:scale-105 hover:border-red-500/60 hover:bg-red-950/60 hover:text-red-300 disabled:opacity-40"
                         >
                           {adjustBusy === -1 ? (
@@ -987,7 +1082,7 @@ export default function AyamCounterPage() {
                           aria-label={t.koreksiPlus}
                           title={t.koreksiPlus}
                           disabled={adjustBusy !== null}
-                          onClick={() => void handleAdjust(1)}
+                          onClick={() => void guardedAction(() => handleAdjust(1))()}
                           className="h-8 w-8 border-emerald-800 bg-emerald-950/60 p-0 text-emerald-300 transition-all hover:scale-105 hover:border-emerald-500/60 hover:bg-emerald-900/60 hover:text-emerald-200 disabled:opacity-40"
                         >
                           {adjustBusy === 1 ? (
@@ -1006,7 +1101,7 @@ export default function AyamCounterPage() {
               <div className="flex flex-col gap-2 pt-1">
                 {sessionActive ? (
                   <Button
-                    onClick={handleStop}
+                    onClick={() => void guardedAction(handleStop)()}
                     disabled={busy === "stop"}
                     className="h-11 bg-red-600 font-semibold text-white hover:bg-red-700 focus-visible:ring-red-500"
                   >
@@ -1024,7 +1119,7 @@ export default function AyamCounterPage() {
                   </Button>
                 ) : (
                   <Button
-                    onClick={handleStart}
+                    onClick={() => void guardedAction(handleStart)()}
                     disabled={busy === "start" || !canStart}
                     title={!canStart ? t.asalAyamRequired : undefined}
                     className="h-11 bg-amber-500 font-semibold text-zinc-950 hover:bg-amber-400 focus-visible:ring-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
@@ -1043,7 +1138,7 @@ export default function AyamCounterPage() {
                   </Button>
                 )}
                 <Button
-                  onClick={handleReset}
+                  onClick={() => void guardedAction(handleReset)()}
                   disabled={busy === "reset" || sessionActive}
                   variant="outline"
                   className="h-10 border-zinc-800 bg-transparent text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100"
@@ -1368,6 +1463,8 @@ export default function AyamCounterPage() {
                     <FileText className="h-3.5 w-3.5" />
                     <span className="hidden lg:inline">{t.laporanHarian}</span>
                   </a>
+                  {/* Laporan rentang tanggal (mingguan/bulanan) */}
+                  <RangeReportDialog t={t} lang={lang} />
                   {historySearch || historyDate ? (
                     <Button
                       size="sm"
@@ -1513,6 +1610,22 @@ export default function AyamCounterPage() {
         lang={lang}
       />
 
+      {/* Gate PIN — dibuka saat aksi terproteksi ditolak (401 pin_required).
+          Setelah PIN benar, aksi yang tertunda diulang otomatis. */}
+      <PinGateDialog
+        open={pinGateOpen}
+        onOpenChange={(o) => {
+          setPinGateOpen(o);
+          if (!o) pendingActionRef.current = null;
+        }}
+        onSuccess={() => {
+          const retry = pendingActionRef.current;
+          pendingActionRef.current = null;
+          if (retry) setTimeout(retry, 120);
+        }}
+        t={t}
+      />
+
       <AlertDialog
         open={deleteTarget !== null}
         onOpenChange={(o) => {
@@ -1546,7 +1659,7 @@ export default function AyamCounterPage() {
               disabled={deleteBusy}
               onClick={(e) => {
                 e.preventDefault();
-                handleDelete();
+                void guardedAction(handleDelete)();
               }}
               className="bg-red-600 font-semibold text-white hover:bg-red-700"
             >
@@ -1564,13 +1677,16 @@ export default function AyamCounterPage() {
       </AlertDialog>
 
       {/* ================= FOOTER (sticky bottom) ================= */}
-      <footer className="mt-auto border-t border-zinc-800 bg-zinc-950 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] pt-4">
+      <footer className="relative z-10 mt-auto border-t border-zinc-800 bg-zinc-950 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] pt-4">
         <div className="mx-auto flex w-full max-w-7xl flex-col items-center justify-between gap-2 px-4 text-xs text-zinc-600 sm:flex-row sm:px-6">
           <p className="flex items-center gap-1.5">
             <Bird className="h-3.5 w-3.5 text-amber-500/70" />
             {t.footerText}
           </p>
-          <p className="font-mono text-[10px] text-zinc-700">{t.footerHint}</p>
+          <p className="flex items-center gap-2 font-mono text-[10px] text-zinc-700">
+            <span className="hidden h-1 w-1 rounded-full bg-zinc-700 sm:inline-block" />
+            {t.footerHint}
+          </p>
         </div>
       </footer>
     </div>
