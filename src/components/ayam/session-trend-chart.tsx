@@ -77,6 +77,7 @@ export function SessionTrendChart({ points, total, active, t }: SessionTrendChar
                   tick={{ fill: "var(--chart-tick)", fontSize: 11 }}
                   tickLine={false}
                   axisLine={{ stroke: "var(--chart-grid)" }}
+                  minTickGap={36}
                   tickFormatter={(v: number) => `${Math.round(v)}s`}
                 />
                 <YAxis

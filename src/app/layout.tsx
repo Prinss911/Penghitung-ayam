@@ -47,10 +47,14 @@ export default function RootLayout({
   return (
     <html lang="id" suppressHydrationWarning>
       <head>
-        {/* No-flash theme: terapkan tema tersimpan sebelum hydrate */}
+        {/* No-flash theme: terapkan tema tersimpan sebelum hydrate.
+            FIX: default harus `dark` — sebelumnya html tanpa class saat
+            pertama kali / tema gelap, sehingga token shadcn (:root) jatuh ke
+            nilai LIGHT → judul kartu near-black di atas kartu gelap, body
+            putih, tooltip/popover putih. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{if(localStorage.getItem('ayam-theme')==='light')document.documentElement.classList.add('light')}catch(e){}`,
+            __html: `try{if(localStorage.getItem('ayam-theme')==='light'){document.documentElement.classList.add('light')}else{document.documentElement.classList.add('dark')}}catch(e){document.documentElement.classList.add('dark')}`,
           }}
         />
       </head>

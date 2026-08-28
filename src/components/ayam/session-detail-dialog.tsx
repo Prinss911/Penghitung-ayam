@@ -7,8 +7,18 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip as ReTooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import {
   Bird,
   CalendarDays,
+  ChartLine,
   Clock3,
   FileSpreadsheet,
   Gauge,
@@ -27,7 +37,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ayamApi, type HistoryItem } from "@/lib/ayam/api";
+import { ayamApi, type HistoryItem, type SessionDetail } from "@/lib/ayam/api";
 import type { Dict } from "@/lib/ayam/i18n";
 
 interface SessionDetailDialogProps {
@@ -53,11 +63,31 @@ export function SessionDetailDialog({
   t,
   lang,
 }: SessionDetailDialogProps) {
+  if (!session) return null;
+
+  // Body diberi key = session.id agar state detail/loading otomatis reset
+  // ketika sesi yang dilihat berganti (tanpa setState di effect).
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <SessionDetailBody key={session.id} session={session} t={t} lang={lang} />
+    </Dialog>
+  );
+}
+
+function SessionDetailBody({
+  session,
+  t,
+  lang,
+}: {
+  session: HistoryItem;
+  t: Dict;
+  lang: "id" | "en";
+}) {
   const [loading, setLoading] = useState(false);
+  const [detail, setDetail] = useState<SessionDetail | null>(null);
 
   // Hitungan turunan dari metadata sesi (start_time / end_time server)
   const derived = useMemo(() => {
-    if (!session) return null;
     const start = session.start_time ? new Date(session.start_time).getTime() : NaN;
     const end = session.end_time ? new Date(session.end_time).getTime() : NaN;
     const duration =
@@ -66,15 +96,17 @@ export function SessionDetailDialog({
     return { duration, rate };
   }, [session]);
 
-  // Prefetch detail (opsional — memastikan field terbaru dari server)
+  // Ambil detail (termasuk snapshot timeline grafik) saat komponen terpasang
   useEffect(() => {
-    if (!open || !session) return;
     let alive = true;
     const id = requestAnimationFrame(() => {
       if (alive) setLoading(true);
     });
     ayamApi
       .getSessionDetail(session.id)
+      .then((d) => {
+        if (alive) setDetail(d);
+      })
       .catch(() => null)
       .finally(() => {
         if (alive) setLoading(false);
@@ -83,9 +115,7 @@ export function SessionDetailDialog({
       alive = false;
       cancelAnimationFrame(id);
     };
-  }, [open, session]);
-
-  if (!session) return null;
+  }, [session]);
 
   const rows: Array<{ icon: React.ComponentType<{ className?: string }>; label: string; value: React.ReactNode }> = [
     {
@@ -128,8 +158,7 @@ export function SessionDetailDialog({
   ];
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-zinc-800 bg-zinc-950 text-zinc-100 sm:max-w-md">
+    <DialogContent className="ayam-scroll max-h-[88vh] overflow-y-auto border-zinc-800 bg-zinc-950 text-zinc-100 sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Bird className="h-4 w-4 text-amber-400" />
@@ -181,6 +210,74 @@ export function SessionDetailDialog({
             })}
           </div>
 
+          {/* Grafik kumulatif sesi (snapshot timeline dari DB) */}
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-3">
+            <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+              <ChartLine className="h-3 w-3" /> {t.grafikSesi}
+              {loading ? <Loader2 className="h-3 w-3 animate-spin text-zinc-600" /> : null}
+            </p>
+            {(() => {
+              const pts = detail?.timeline ?? [];
+              if (pts.length >= 2) {
+                return (
+                  <div className="mt-2 h-36 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={pts} margin={{ top: 6, right: 6, left: -22, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="detailTrendFill" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.4} />
+                            <stop offset="100%" stopColor="#f59e0b" stopOpacity={0.02} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 3" vertical={false} />
+                        <XAxis
+                          dataKey="t"
+                          tick={{ fill: "var(--chart-tick)", fontSize: 10 }}
+                          tickLine={false}
+                          axisLine={{ stroke: "var(--chart-grid)" }}
+                          minTickGap={28}
+                          tickFormatter={(v: number) => `${Math.round(v)}s`}
+                        />
+                        <YAxis
+                          tick={{ fill: "var(--chart-tick)", fontSize: 10 }}
+                          tickLine={false}
+                          axisLine={false}
+                          allowDecimals={false}
+                        />
+                        <ReTooltip
+                          cursor={{ stroke: "#f59e0b", strokeOpacity: 0.3 }}
+                          contentStyle={{
+                            background: "#09090b",
+                            border: "1px solid #3f3f46",
+                            borderRadius: 8,
+                            fontSize: 12,
+                            color: "#f4f4f5",
+                          }}
+                          labelFormatter={(v) => `${v} ${t.detik}`}
+                          formatter={(value: number | string) => [value, t.totalAyam]}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="total"
+                          stroke="#f59e0b"
+                          strokeWidth={2}
+                          fill="url(#detailTrendFill)"
+                          dot={false}
+                          activeDot={{ r: 3.5, fill: "#f59e0b", stroke: "#09090b" }}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                );
+              }
+              return (
+                <p className="mt-2 rounded-md border border-dashed border-zinc-800 px-3 py-4 text-center text-[11px] italic text-zinc-600">
+                  {t.grafikSesiKosong}
+                </p>
+              );
+            })()}
+          </div>
+
           {/* Catatan */}
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-3">
             <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
@@ -220,7 +317,6 @@ export function SessionDetailDialog({
             </div>
           ) : null}
         </div>
-      </DialogContent>
-    </Dialog>
+    </DialogContent>
   );
 }

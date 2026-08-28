@@ -152,3 +152,44 @@ Rekomendasi ronde berikutnya (prioritas):
 3. Notifikasi browser (Notification API) untuk milestone saat tab di background.
 4. Simpan timeline per-menit ke DB agar grafik sesi bertahan setelah restart backend.
 5. Paginasi/limit riwayat + pencarian di dialog detail (saat ini pakai data baris).
+
+---
+Task ID: 4
+Agent: Z.ai Code (cron webDevReview ronde 4)
+Date: 2026-08-28
+Task: QA berkala + assessment; fokus ronde: menuntaskan fitur yang setengah jadi (upload video UI, koreksi hitung manual UI, grafik timeline di detail sesi) + perbaikan bug + polish styling.
+
+Work Log:
+- QA awal via agent-browser: semua layanan sehat (Next :3000, Flask :5000, Caddy :81), video live + YOLO berjalan, TANPA error console. Dashboard v2.3 dari ronde sebelumnya render sempurna (dark).
+- TEMUAN PENTING: ada ronde sebelumnya (TIDAK tercatat di worklog) yang sudah menambahkan: dialog sumber kamera (camera-source-dialog.tsx + /api/camera-source GET/POST + upload di backend + notifikasi browser milestone + persist timeline JSON ke DB + api client uploadCameraVideo & adjustCount). Ronde ini memverifikasi semuanya, lalu MENUNTASKAN lapisan UI yang masih bolong.
+- Cleanup data: hapus sesi QA sampah #14 "QA Adjust" (2) & #13 "Farm QA R4" (77) via UI delete + file Excel ikon terhapus (28→26 file). Terverifikasi.
+- Verifikasi fitur ganti sumber kamera (ronde hantu): switch video_shackle_kosong ↔ berisi via UI → backend apply + toast + video + counter berubah. OK.
+- BUG #1 (backend, upload ditolak "File kosong"): `size_mb = round(bytes/1MB, 1)` membuat file < 52 KB jadi 0.0 MB → checks `size_mb < 0.01` salah menolak. Fix app.py: validasi pakai byte mentah (> 300 MB tolak, < 10 KB tolak), size_mb hanya untuk display.
+- BUG #2 (frontend/infra, upload 404 dari :3000): next.config.ts FLASK_PROXY_ROUTES hanya punya "/api/camera-source" eksak — POST multipart ke /api/camera-source/upload dan /api/count/adjust tidak ter-rewrite → 404 saat dashboard dibuka langsung dari port Next.js (via Caddy :81 aman). Fix: tambah "/api/camera-source/:path*" dan "/api/count/adjust". Next dev auto-reload config.
+- BUG #3 (frontend, runtime error): refactor SessionDetailDialog (pola keyed body component agar reset detail tanpa setState-in-effect — lint react-hooks/set-state-in-effect) menyisakan <Dialog open onOpenChange> di body yang propertinya tak ada → "onOpenChange is not defined" saat klik baris riwayat. Fix: body merender <DialogContent> saja di dalam <Dialog> induk.
+- BUG #4 (UX kecil): reload halaman di tengah sesi count tinggi → toast milestone palsu meledak ("120 ayam"). Fix: firstCountObserved ref — observasi count pertama tidak memicu milestone.
+- FITUR BARU A (upload video UI): CameraSourceDialog kini punya drop-zone (drag&drop + klik pilih file, dashed border, hover amber), progress bar XHR %, validasi ekstensi/ukuran di klien, i18n penuh ID/EN. Upload via browser E2E: test-upload.mp4 → tersimpan `upload_test-upload_...mp4`, langsung jadi sumber, muncul & aktif di daftar video, feed canvas menampilkan video baru.
+- FITUR BARU B (koreksi manual +1/−1): saat sesi aktif, kotak info sesi emerald punya baris "Koreksi Manual" + tombol − / + (hover scale, spinner saat busy, aria-label). Backend mencatat ke timeline + baris Excel 'Manual'. Terverifikasi: 6 →(−1)→ toast "Hitungan dikoreksi (−1)" → 8; (+1) masuk hitungan; sesi #15 tersimpan 129.
+- FITUR BARU C (grafik timeline detail sesi): SessionDetailDialog mengambil GET /api/history/<id> (kini termasuk `timeline` dari DB) dan merender AreaChart kumulatif amber (gradient, tooltip ID/EN, minTickGap) bila ≥2 poin; fallback teks "Tidak ada data timeline" untuk sesi lama. Dialog dibuat scrollable (max-h-88vh ayam-scroll). Terverifikasi di sesi #15: 131 poin, grafik mulus 0→129.
+- STYLING: x-axis Tren Kumulatif tak lagi dobel label (minTickGap=36; sebelumnya "20s,20s,20s"); tombol koreksi & drop-zone polished; semua teks baru bilingual.
+- Mobile 390x844 OK; EN lengkap; console bersih; `bun run lint` → 0 error.
+- Data uji: sesi #15 "Farm Adjust QA" (129 ayam, timeline 131 poin) SENGAJA disimpan sebagai demo grafik detail.
+
+Stage Summary:
+- Dashboard v2.4: 3 fitur baru (upload video sumber kamera, koreksi manual hitung, grafik kumulatif di detail sesi) + 4 bug fix (upload validation, gateway rewrite 404, detail dialog crash, milestone palsu).
+- Backend: 1 patch (validasi byte upload). Semua endpoint lama stabil.
+- Fitur ronde-hantu (sumber kamera runtime + notifikasi browser + persist timeline) kini terverifikasi penuh & punya UI lengkap.
+- Lint bersih; QA agent-browser end-to-end pass (desktop + mobile, ID + EN).
+
+Risiko / catatan:
+- Upload file besar (>~50 MB) via gateway :81/Caddy belum diuji — di :3000 OK (file uji kecil). Perlu uji file besar bila fitur dipakai operator.
+- Sesi lama (id ≤ 14) tanpa timeline → dialog detail menampilkan fallback teks; hanya sesi baru punya grafik.
+- File upload tersimpan di root backend dengan prefix `upload_` (tidak ada UI hapus video unggahan — bisa jadi ide ronde berikut).
+- Nilai .env: CONFIDENCE_THRESHOLD=0.25, COUNT_LINE_POSITION=112, ZONE_WIDTH=100, CAMERA_SOURCE=video_shackle_berisi.mp4.
+
+Rekomendasi ronde berikutnya (prioritas):
+1. Hapus/kelola video hasil unggahan dari dialog sumber kamera (list upload_ + tombol hapus).
+2. Uji upload video besar (100-300 MB) + indikator "menyiapkan video" saat capture thread switch.
+3. Ekspor laporan PDF harian (ringkasan sesi + grafik) — naikkan nilai produk.
+4. Autentikasi sederhana (PIN operator) sebelum mulai/stop/hapus sesi untuk produksi.
+5. Toast milestone saat sesi berjalan kini benar; pertimbangkan suara berbeda untuk koreksi manual.

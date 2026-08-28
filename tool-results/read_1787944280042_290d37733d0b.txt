@@ -1,0 +1,1413 @@
+     1→"use client";
+     2→
+     3→/**
+     4→ * Ayam Counter Pro — Dashboard utama (v2.1)
+     5→ * Frontend Next.js untuk backend Flask + YOLOv8 (port 5000 via gateway)
+     6→ * Bilingual: Bahasa Indonesia / English
+     7→ * Fitur: live feed canvas, kontrol sesi, pengaturan runtime, grafik tren,
+     8→ *        ringkasan 7 hari, milestone toast + beep, filter riwayat, CSV.
+     9→ */
+    10→
+    11→import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+    12→import { motion } from "framer-motion";
+    13→import {
+    14→  Bar,
+    15→  BarChart,
+    16→  CartesianGrid,
+    17→  ResponsiveContainer,
+    18→  Tooltip as ReTooltip,
+    19→  XAxis,
+    20→  YAxis,
+    21→} from "recharts";
+    22→import {
+    23→  BellOff,
+    24→  BellRing,
+    25→  Bird,
+    26→  Camera,
+    27→  ChevronRight,
+    28→  Cpu,
+    29→  Crosshair,
+    30→  Download,
+    31→  FileDown,
+    32→  FileSpreadsheet,
+    33→  Gauge,
+    34→  History,
+    35→  Info,
+    36→  Play,
+    37→  RotateCcw,
+    38→  ScanEye,
+    39→  Search,
+    40→  Signal,
+    41→  SignalHigh,
+    42→  SignalZero,
+    43→  Square,
+    44→  Timer,
+    45→  Trash2,
+    46→} from "lucide-react";
+    47→import { toast } from "sonner";
+    48→
+    49→import { Button } from "@/components/ui/button";
+    50→import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+    51→import { Badge } from "@/components/ui/badge";
+    52→import { Input } from "@/components/ui/input";
+    53→import { Label } from "@/components/ui/label";
+    54→import { Skeleton } from "@/components/ui/skeleton";
+    55→import {
+    56→  AlertDialog,
+    57→  AlertDialogAction,
+    58→  AlertDialogCancel,
+    59→  AlertDialogContent,
+    60→  AlertDialogDescription,
+    61→  AlertDialogFooter,
+    62→  AlertDialogHeader,
+    63→  AlertDialogTitle,
+    64→} from "@/components/ui/alert-dialog";
+    65→import {
+    66→  Table,
+    67→  TableBody,
+    68→  TableCell,
+    69→  TableHead,
+    70→  TableHeader,
+    71→  TableRow,
+    72→} from "@/components/ui/table";
+    73→
+    74→import { useAyamDashboard } from "@/components/ayam/use-ayam-dashboard";
+    75→import { VideoFeed } from "@/components/ayam/video-feed";
+    76→import { SettingsDialog } from "@/components/ayam/settings-dialog";
+    77→import { CameraSourceDialog } from "@/components/ayam/camera-source-dialog";
+    78→import { SessionTrendChart } from "@/components/ayam/session-trend-chart";
+    79→import { SessionDetailDialog } from "@/components/ayam/session-detail-dialog";
+    80→import { ThemeToggle } from "@/components/ayam/theme-toggle";
+    81→import { AnimatedNumber } from "@/components/ayam/animated-number";
+    82→import { ayamApi, type HistoryItem } from "@/lib/ayam/api";
+    83→import { dict, type Lang } from "@/lib/ayam/i18n";
+    84→
+    85→// =====================================================
+    86→// SMALL BUILDING BLOCKS
+    87→// =====================================================
+    88→
+    89→const fadeUp = {
+    90→  initial: { opacity: 0, y: 14 },
+    91→  animate: { opacity: 1, y: 0 },
+    92→};
+    93→
+    94→function LiveDot({ active }: { active: boolean }) {
+    95→  return (
+    96→    <span
+    97→      className={`relative inline-flex h-2.5 w-2.5 rounded-full ${
+    98→        active ? "ayam-live-dot text-emerald-400 bg-emerald-400" : "bg-zinc-500"
+    99→      }`}
+   100→    />
+   101→  );
+   102→}
+   103→
+   104→function StatCard({
+   105→  icon: Icon,
+   106→  label,
+   107→  value,
+   108→  sub,
+   109→  accent,
+   110→  glow,
+   111→}: {
+   112→  icon: React.ComponentType<{ className?: string }>;
+   113→  label: string;
+   114→  value: React.ReactNode;
+   115→  sub?: React.ReactNode;
+   116→  accent: string;
+   117→  glow: string;
+   118→}) {
+   119→  return (
+   120→    <Card
+   121→      className={`group relative overflow-hidden border-zinc-800 bg-zinc-900/60 transition-all duration-300 hover:-translate-y-0.5 hover:border-zinc-700 ${glow}`}
+   122→    >
+   123→      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-zinc-600 to-transparent" />
+   124→      <CardContent className="p-4 sm:p-5">
+   125→        <div className="flex items-start justify-between gap-2">
+   126→          <div className="min-w-0">
+   127→            <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+   128→              {label}
+   129→            </p>
+   130→            <p className="mt-1.5 truncate text-2xl font-bold tabular-nums text-zinc-50 sm:text-3xl">
+   131→              {value}
+   132→            </p>
+   133→            {sub ? <div className="mt-1 text-xs text-zinc-500">{sub}</div> : null}
+   134→          </div>
+   135→          <div
+   136→            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-transform duration-300 group-hover:scale-110 ${accent}`}
+   137→          >
+   138→            <Icon className="h-5 w-5" />
+   139→          </div>
+   140→        </div>
+   141→      </CardContent>
+   142→    </Card>
+   143→  );
+   144→}
+   145→
+   146→function ConnBadge({ mode, t }: { mode: string; t: (typeof dict)[Lang] }) {
+   147→  const map: Record<
+   148→    string,
+   149→    { cls: string; icon: React.ComponentType<{ className?: string }>; text: string }
+   150→  > = {
+   151→    connecting: {
+   152→      cls: "bg-zinc-800 text-zinc-400 border-zinc-700",
+   153→      icon: Signal,
+   154→      text: `${t.koneksiMode}: …`,
+   155→    },
+   156→    socket: {
+   157→      cls: "bg-emerald-950 text-emerald-400 border-emerald-900",
+   158→      icon: SignalHigh,
+   159→      text: `${t.koneksiSoket} ${t.terhubung}`,
+   160→    },
+   161→    polling: {
+   162→      cls: "bg-amber-950 text-amber-400 border-amber-900",
+   163→      icon: Signal,
+   164→      text: t.koneksiPolling,
+   165→    },
+   166→    offline: {
+   167→      cls: "bg-red-950 text-red-400 border-red-900",
+   168→      icon: SignalZero,
+   169→      text: "Offline",
+   170→    },
+   171→  };
+   172→  const M = map[mode] ?? map.connecting;
+   173→  const Icon = M.icon;
+   174→  return (
+   175→    <Badge variant="outline" className={`${M.cls} gap-1.5 px-2 py-1 font-medium sm:px-2.5`}>
+   176→      <Icon className="h-3.5 w-3.5 shrink-0" />
+   177→      <span className="hidden min-w-0 truncate sm:inline">{M.text}</span>
+   178→    </Badge>
+   179→  );
+   180→}
+   181→
+   182→// =====================================================
+   183→// MAIN PAGE
+   184→// =====================================================
+   185→
+   186→export default function AyamCounterPage() {
+   187→  const [lang, setLangState] = useState<Lang>("id");
+   188→
+   189→  // Muat bahasa tersimpan (client only, hindari hydration mismatch)
+   190→  useEffect(() => {
+   191→    try {
+   192→      const saved = window.localStorage.getItem("ayam-lang");
+   193→      if (saved === "id" || saved === "en") setLangState(saved);
+   194→    } catch {
+   195→      /* abaikan */
+   196→    }
+   197→  }, []);
+   198→
+   199→  const setLang = useCallback((l: Lang) => {
+   200→    setLangState(l);
+   201→    try {
+   202→      window.localStorage.setItem("ayam-lang", l);
+   203→    } catch {
+   204→      /* abaikan */
+   205→    }
+   206→  }, []);
+   207→
+   208→  const t = dict[lang];
+   209→
+   210→  const {
+   211→    stats,
+   212→    device,
+   213→    history,
+   214→    exports,
+   215→    timeline,
+   216→    connMode,
+   217→    refreshSideData,
+   218→    refreshDevice,
+   219→  } = useAyamDashboard();
+   220→
+   221→  // ----- form state -----
+   222→  const [asalAyam, setAsalAyam] = useState("");
+   223→  const [tanggal, setTanggal] = useState("");
+   224→  const [jam, setJam] = useState("");
+   225→  const [keterangan, setKeterangan] = useState("");
+   226→  const [busy, setBusy] = useState<"start" | "stop" | "reset" | null>(null);
+   227→
+   228→  // ----- history filter -----
+   229→  const [historySearch, setHistorySearch] = useState("");
+   230→  const [historyDate, setHistoryDate] = useState("");
+   231→
+   232→  // ----- detail & delete dialog -----
+   233→  const [detailSession, setDetailSession] = useState<HistoryItem | null>(null);
+   234→  const [detailOpen, setDetailOpen] = useState(false);
+   235→  const [deleteTarget, setDeleteTarget] = useState<HistoryItem | null>(null);
+   236→  const [deleteBusy, setDeleteBusy] = useState(false);
+   237→
+   238→  // ----- milestone & self-healing toast -----
+   239→  const lastMilestoneRef = useRef(0);
+   240→  const prevConnMode = useRef<string>("connecting");
+   241→  const [recoveryTick, setRecoveryTick] = useState(0);
+   242→
+   243→  // ----- notifikasi browser (milestone saat tab di background) -----
+   244→  const [notifEnabled, setNotifEnabled] = useState(false);
+   245→  useEffect(() => {
+   246→    try {
+   247→      setNotifEnabled(
+   248→        "Notification" in window &&
+   249→          localStorage.getItem("ayam-notif") === "1" &&
+   250→          Notification.permission === "granted"
+   251→      );
+   252→    } catch {
+   253→      /* abaikan */
+   254→    }
+   255→  }, []);
+   256→
+   257→  const toggleNotif = useCallback(async () => {
+   258→    if (!("Notification" in window)) {
+   259→      toast.error(t.notifTidakDidukung);
+   260→      return;
+   261→    }
+   262→    if (notifEnabled) {
+   263→      setNotifEnabled(false);
+   264→      try {
+   265→        localStorage.setItem("ayam-notif", "0");
+   266→      } catch {}
+   267→      return;
+   268→    }
+   269→    let perm = Notification.permission;
+   270→    if (perm === "default") {
+   271→      try {
+   272→        perm = await Notification.requestPermission();
+   273→      } catch {
+   274→        perm = "denied";
+   275→      }
+   276→    }
+   277→    if (perm === "granted") {
+   278→      setNotifEnabled(true);
+   279→      try {
+   280→        localStorage.setItem("ayam-notif", "1");
+   281→      } catch {}
+   282→      toast.success(t.notifAktif);
+   283→    } else {
+   284→      toast.error(t.notifIzinDitolak);
+   285→    }
+   286→  }, [notifEnabled, t]);
+   287→
+   288→  // default tanggal & jam (client only, hindari hydration mismatch)
+   289→  useEffect(() => {
+   290→    const now = new Date();
+   291→    const pad = (n: number) => String(n).padStart(2, "0");
+   292→    setTanggal(`${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`);
+   293→    setJam(`${pad(now.getHours())}:${pad(now.getMinutes())}`);
+   294→  }, []);
+   295→
+   296→  const sessionActive = stats.session_active || stats.is_processing === true;
+   297→  const canStart = asalAyam.trim().length > 0;
+   298→
+   299→  // ----- durasi sesi berjalan (dari timeline backend, detik) -----
+   300→  const elapsedSec = useMemo(() => {
+   301→    if (!sessionActive || timeline.length === 0) return 0;
+   302→    return timeline[timeline.length - 1]?.t ?? 0;
+   303→  }, [sessionActive, timeline]);
+   304→  const elapsedLabel = useMemo(() => {
+   305→    const s = Math.max(0, Math.floor(elapsedSec));
+   306→    const hh = Math.floor(s / 3600);
+   307→    const mm = Math.floor((s % 3600) / 60);
+   308→    const ss = s % 60;
+   309→    const p = (n: number) => String(n).padStart(2, "0");
+   310→    return hh > 0 ? `${hh}:${p(mm)}:${p(ss)}` : `${p(mm)}:${p(ss)}`;
+   311→  }, [elapsedSec]);
+   312→
+   313→  // ----- toast saat backend down / pulih (self-healing) -----
+   314→  useEffect(() => {
+   315→    const prev = prevConnMode.current;
+   316→    if (prev !== connMode) {
+   317→      if (connMode === "offline") {
+   318→        toast.info(t.backendMulaiUlang, { duration: 8000 });
+   319→      } else if (prev === "offline" && (connMode === "socket" || connMode === "polling")) {
+   320→        toast.success(t.backendPulih);
+   321→        // Picu sambung-ulang otomatis video feed
+   322→        setRecoveryTick((k) => k + 1);
+   323→      }
+   324→      prevConnMode.current = connMode;
+   325→    }
+   326→  }, [connMode, t]);
+   327→
+   328→  // ----- beep (WebAudio, tanpa asset) -----
+   329→  const playBeep = useCallback(() => {
+   330→    try {
+   331→      const Ctx =
+   332→        window.AudioContext ||
+   333→        (window as unknown as { webkitAudioContext: typeof AudioContext })
+   334→          .webkitAudioContext;
+   335→      const ctx = new Ctx();
+   336→      const osc = ctx.createOscillator();
+   337→      const gain = ctx.createGain();
+   338→      osc.connect(gain);
+   339→      gain.connect(ctx.destination);
+   340→      osc.type = "sine";
+   341→      osc.frequency.value = 880;
+   342→      gain.gain.setValueAtTime(0.001, ctx.currentTime);
+   343→      gain.gain.exponentialRampToValueAtTime(0.1, ctx.currentTime + 0.02);
+   344→      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
+   345→      osc.start();
+   346→      osc.stop(ctx.currentTime + 0.5);
+   347→      osc.onended = () => void ctx.close();
+   348→    } catch {
+   349→      /* audio diblokir browser — abaikan */
+   350→    }
+   351→  }, []);
+   352→
+   353→  // ----- milestone setiap kelipatan 10 -----
+   354→  useEffect(() => {
+   355→    const c = stats.count;
+   356→    const STEP = 10;
+   357→    if (c < lastMilestoneRef.current) {
+   358→      // reset / sesi baru
+   359→      lastMilestoneRef.current = c;
+   360→      return;
+   361→    }
+   362→    const prevLevel = Math.floor(lastMilestoneRef.current / STEP);
+   363→    const level = Math.floor(c / STEP);
+   364→    if (c > 0 && level > prevLevel) {
+   365→      const milestoneVal = level * STEP;
+   366→      toast.success(`${milestoneVal} ${t.milestoneDesc}`, {
+   367→        description: `🎯 ${t.milestone}`,
+   368→      });
+   369→      playBeep();
+   370→      // Notifikasi browser saat tab di background
+   371→      if (
+   372→        notifEnabled &&
+   373→        typeof document !== "undefined" &&
+   374→        document.hidden &&
+   375→        "Notification" in window &&
+   376→        Notification.permission === "granted"
+   377→      ) {
+   378→        try {
+   379→          const n = new Notification(
+   380→            `${t.notifMilestoneTitle} — ${milestoneVal}`,
+   381→            {
+   382→              body: `${milestoneVal} ${t.notifMilestoneBody}`,
+   383→              tag: "ayam-milestone",
+   384→            }
+   385→          );
+   386→          setTimeout(() => n.close(), 6000);
+   387→        } catch {
+   388→          /* abaikan */
+   389→        }
+   390→      }
+   391→    }
+   392→    lastMilestoneRef.current = Math.max(lastMilestoneRef.current, c);
+   393→  }, [stats.count, t, playBeep, notifEnabled]);
+   394→
+   395→  // ----- actions -----
+   396→  const handleStart = useCallback(async () => {
+   397→    if (!canStart) {
+   398→      toast.error(t.gagalStart, { description: t.asalAyamRequired });
+   399→      return;
+   400→    }
+   401→    setBusy("start");
+   402→    try {
+   403→      await ayamApi.startSession({
+   404→        asal_ayam: asalAyam.trim(),
+   405→        tanggal: tanggal,
+   406→        jam: jam,
+   407→        keterangan: keterangan.trim(),
+   408→      });
+   409→      lastMilestoneRef.current = 0;
+   410→      toast.success(t.sesiDimulai, {
+   411→        description: `${t.asalAyam}: ${asalAyam.trim() || "Unknown"}`,
+   412→      });
+   413→    } catch {
+   414→      toast.error(t.gagalStart, {
+   415→        description:
+   416→          lang === "id"
+   417→            ? "Cek apakah backend Flask berjalan."
+   418→            : "Check if the Flask backend is running.",
+   419→      });
+   420→    } finally {
+   421→      setBusy(null);
+   422→    }
+   423→  }, [asalAyam, tanggal, jam, keterangan, t, lang, canStart]);
+   424→
+   425→  const handleStop = useCallback(async () => {
+   426→    setBusy("stop");
+   427→    try {
+   428→      const res = await ayamApi.stopSession();
+   429→      toast.success(t.sesiDihentikan, {
+   430→        description: res.file
+   431→          ? `${res.file.split("/").pop()} — ${stats.count} ${
+   432→              lang === "id" ? "ayam" : "chickens"
+   433→            }`
+   434→          : lang === "id"
+   435→            ? "Tidak ada data deteksi untuk disimpan"
+   436→            : "No detection data to save",
+   437→      });
+   438→      refreshSideData();
+   439→    } catch {
+   440→      toast.error(t.gagalStop);
+   441→    } finally {
+   442→      setBusy(null);
+   443→    }
+   444→  }, [t, lang, stats.count, refreshSideData]);
+   445→
+   446→  const handleReset = useCallback(async () => {
+   447→    setBusy("reset");
+   448→    try {
+   449→      await ayamApi.resetCounter();
+   450→      lastMilestoneRef.current = 0;
+   451→      toast.info(t.counterDireset);
+   452→    } catch {
+   453→      toast.error(t.gagalReset);
+   454→    } finally {
+   455→      setBusy(null);
+   456→    }
+   457→  }, [t]);
+   458→
+   459→  // ----- hapus sesi riwayat -----
+   460→  const handleDelete = useCallback(async () => {
+   461→    if (!deleteTarget) return;
+   462→    setDeleteBusy(true);
+   463→    try {
+   464→      const res = await ayamApi.deleteSession(deleteTarget.id);
+   465→      toast.success(t.sesiDihapus, {
+   466→        description: res.file_removed
+   467→          ? `${deleteTarget.file_name?.split("/").pop()} — ✓`
+   468→          : `#${deleteTarget.id}`,
+   469→      });
+   470→      setDeleteTarget(null);
+   471→      refreshSideData();
+   472→    } catch {
+   473→      toast.error(t.gagalHapus);
+   474→    } finally {
+   475→      setDeleteBusy(false);
+   476→    }
+   477→  }, [deleteTarget, t, refreshSideData]);
+   478→
+   479→  const openDetail = useCallback((h: HistoryItem) => {
+   480→    setDetailSession(h);
+   481→    setDetailOpen(true);
+   482→  }, []);
+   483→
+   484→  // ----- derived -----
+   485→  const daily = history.stats;
+   486→
+   487→  const weeklyData = useMemo(() => {
+   488→    const map = new Map<string, number>();
+   489→    for (const h of history.history) {
+   490→      if (!h.tanggal) continue;
+   491→      map.set(h.tanggal, (map.get(h.tanggal) ?? 0) + (h.total_count ?? 0));
+   492→    }
+   493→    // Zero-fill: selalu tampilkan 7 hari terakhir (hari tanpa data = 0)
+   494→    const pad = (n: number) => String(n).padStart(2, "0");
+   495→    const now = new Date();
+   496→    const days: { day: string; total: number }[] = [];
+   497→    for (let i = 6; i >= 0; i--) {
+   498→      const d = new Date(now);
+   499→      d.setDate(now.getDate() - i);
+   500→      const key = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+   501→      days.push({ day: key.slice(5), total: map.get(key) ?? 0 });
+   502→    }
+   503→    return days;
+   504→  }, [history]);
+   505→
+   506→  const filteredHistory = useMemo(() => {
+   507→    const q = historySearch.trim().toLowerCase();
+   508→    return history.history.filter((h) => {
+   509→      const okSearch = !q || (h.asal_ayam ?? "").toLowerCase().includes(q);
+   510→      const okDate = !historyDate || h.tanggal === historyDate;
+   511→      return okSearch && okDate;
+   512→    });
+   513→  }, [history.history, historySearch, historyDate]);
+   514→
+   515→  // daftar asal ayam unik untuk quick-pick (datalist)
+   516→  const originOptions = useMemo(() => {
+   517→    const set = new Set<string>();
+   518→    for (const h of history.history) {
+   519→      const o = (h.asal_ayam ?? "").trim();
+   520→      if (o) set.add(o);
+   521→    }
+   522→    return Array.from(set).slice(0, 12);
+   523→  }, [history.history]);
+   524→
+   525→  const sortedExports = useMemo(
+   526→    () => [...exports].sort((a, b) => b.modified - a.modified),
+   527→    [exports]
+   528→  );
+   529→
+   530→  const backendBadge =
+   531→    device?.backend === "cuda"
+   532→      ? "bg-emerald-950 text-emerald-400 border-emerald-900"
+   533→      : device?.backend === "cpu"
+   534→        ? "bg-amber-950 text-amber-400 border-amber-900"
+   535→        : "bg-zinc-800 text-zinc-300 border-zinc-700";
+   536→
+   537→  return (
+   538→    <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
+   539→      {/* ================= HEADER ================= */}
+   540→      <header className="sticky top-0 z-50 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur supports-[backdrop-filter]:bg-zinc-950/60">
+   541→        <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
+   542→          <div className="flex min-w-0 items-center gap-3">
+   543→            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-zinc-950 shadow-lg shadow-amber-500/20">
+   544→              <Bird className="h-6 w-6" />
+   545→            </div>
+   546→            <div className="min-w-0">
+   547→              <h1 className="truncate text-base font-bold leading-tight sm:text-lg">
+   548→                {t.appName}
+   549→              </h1>
+   550→              <p className="hidden truncate text-xs text-zinc-500 sm:block">
+   551→                {t.appTagline}
+   552→              </p>
+   553→            </div>
+   554→          </div>
+   555→
+   556→          <div className="flex items-center gap-2 sm:gap-3">
+   557→            <ConnBadge mode={connMode} t={t} />
+   558→            <SettingsDialog t={t} onSaved={refreshDevice} />
+   559→            <Button
+   560→              variant="outline"
+   561→              size="icon"
+   562→              onClick={() => void toggleNotif()}
+   563→              aria-label={notifEnabled ? t.notifNonaktifkan : t.notifAktifkan}
+   564→              aria-pressed={notifEnabled}
+   565→              title={notifEnabled ? t.notifNonaktifkan : t.notifAktifkan}
+   566→              className={`h-9 w-9 border-zinc-800 bg-zinc-900 transition-colors ${
+   567→                notifEnabled
+   568→                  ? "border-emerald-900 text-emerald-400 hover:bg-zinc-800 hover:text-emerald-300"
+   569→                  : "text-zinc-400 hover:border-emerald-500/50 hover:bg-zinc-800 hover:text-emerald-400"
+   570→              }`}
+   571→            >
+   572→              {notifEnabled ? <BellRing className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
+   573→            </Button>
+   574→            <ThemeToggle t={t} />
+   575→            {/* Language toggle */}
+   576→            <div className="flex overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900 text-xs font-semibold">
+   577→              <button
+   578→                onClick={() => setLang("id")}
+   579→                className={`px-3 py-1.5 transition-colors ${
+   580→                  lang === "id"
+   581→                    ? "bg-amber-500 text-zinc-950"
+   582→                    : "text-zinc-400 hover:text-zinc-200"
+   583→                }`}
+   584→                aria-pressed={lang === "id"}
+   585→              >
+   586→                ID
+   587→              </button>
+   588→              <button
+   589→                onClick={() => setLang("en")}
+   590→                className={`px-3 py-1.5 transition-colors ${
+   591→                  lang === "en"
+   592→                    ? "bg-amber-500 text-zinc-950"
+   593→                    : "text-zinc-400 hover:text-zinc-200"
+   594→                }`}
+   595→                aria-pressed={lang === "en"}
+   596→              >
+   597→                EN
+   598→              </button>
+   599→            </div>
+   600→          </div>
+   601→        </div>
+   602→      </header>
+   603→
+   604→      {/* ================= MAIN ================= */}
+   605→      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-5 sm:px-6 sm:py-6">
+   606→        {/* ---- Stat cards ---- */}
+   607→        <motion.section
+   608→          aria-label="statistics"
+   609→          initial={fadeUp.initial}
+   610→          animate={fadeUp.animate}
+   611→          transition={{ duration: 0.35 }}
+   612→          className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4"
+   613→        >
+   614→          <StatCard
+   615→            icon={Bird}
+   616→            label={t.totalAyam}
+   617→            value={
+   618→              <AnimatedNumber
+   619→                value={stats.count}
+   620→                className={sessionActive ? "text-emerald-400" : undefined}
+   621→              />
+   622→            }
+   623→            sub={
+   624→              sessionActive ? (
+   625→                <span className="inline-flex items-center gap-1.5 font-medium text-emerald-400">
+   626→                  <LiveDot active /> {t.aktifBerjalan}
+   627→                </span>
+   628→              ) : (
+   629→                <span className="inline-flex items-center gap-1.5 text-zinc-500">
+   630→                  <LiveDot active={false} /> {t.menungguSesi}
+   631→                </span>
+   632→              )
+   633→            }
+   634→            accent="bg-amber-500/15 text-amber-400"
+   635→            glow="hover:shadow-[0_8px_32px_-12px_rgba(245,158,11,0.35)]"
+   636→          />
+   637→          <StatCard
+   638→            icon={ScanEye}
+   639→            label={t.objekDiFrame}
+   640→            value={stats.tracks.toLocaleString(lang === "id" ? "id-ID" : "en-US")}
+   641→            sub={
+   642→              <span>
+   643→                {t.bingkai}: {stats.frame ?? "-"} · {stats.method}
+   644→              </span>
+   645→            }
+   646→            accent="bg-emerald-500/15 text-emerald-400"
+   647→            glow="hover:shadow-[0_8px_32px_-12px_rgba(16,185,129,0.35)]"
+   648→          />
+   649→          <StatCard
+   650→            icon={Gauge}
+   651→            label={t.statusSession}
+   652→            value={
+   653→              sessionActive ? (
+   654→                <span className="text-emerald-400">{t.aktif}</span>
+   655→              ) : (
+   656→                <span className="text-zinc-400">{t.nonaktif}</span>
+   657→              )
+   658→            }
+   659→            sub={
+   660→              sessionActive && stats.session_data?.asal_ayam
+   661→                ? `${t.asalAyam}: ${stats.session_data.asal_ayam}`
+   662→                : `—`
+   663→            }
+   664→            accent="bg-sky-500/15 text-sky-400"
+   665→            glow="hover:shadow-[0_8px_32px_-12px_rgba(14,165,233,0.35)]"
+   666→          />
+   667→          <StatCard
+   668→            icon={Cpu}
+   669→            label={t.backend}
+   670→            value={device ? device.backend.toUpperCase() : "…"}
+   671→            sub={
+   672→              device ? (
+   673→                <span className="inline-flex flex-wrap items-center gap-1.5">
+   674→                  <Badge
+   675→                    variant="outline"
+   676→                    className={`${backendBadge} px-1.5 py-0 text-[10px] uppercase`}
+   677→                  >
+   678→                    {device.verified ? "✓ verified" : "unverified"}
+   679→                  </Badge>
+   680→                  {device.model_loaded ? (
+   681→                    t.modelTermuat
+   682→                  ) : (
+   683→                    <span className="text-red-400">{t.modelBelum}</span>
+   684→                  )}
+   685→                </span>
+   686→              ) : (
+   687→                <Skeleton className="h-3 w-24 bg-zinc-800" />
+   688→              )
+   689→            }
+   690→            accent="bg-violet-500/15 text-violet-400"
+   691→            glow="hover:shadow-[0_8px_32px_-12px_rgba(139,92,246,0.35)]"
+   692→          />
+   693→        </motion.section>
+   694→
+   695→        {/* ---- Video + session panel ---- */}
+   696→        <motion.section
+   697→          className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3"
+   698→          initial={fadeUp.initial}
+   699→          animate={fadeUp.animate}
+   700→          transition={{ duration: 0.35, delay: 0.06 }}
+   701→        >
+   702→          {/* ---------- Video feed ---------- */}
+   703→          <Card className="overflow-hidden border-zinc-800 bg-zinc-900/60 lg:col-span-2">
+   704→            <CardHeader className="pb-3">
+   705→              <div className="flex flex-wrap items-center justify-between gap-2">
+   706→                <div>
+   707→                  <CardTitle className="flex items-center gap-2 text-base">
+   708→                    <Camera className="h-4 w-4 text-amber-400" />
+   709→                    {t.feedLangsung}
+   710→                  </CardTitle>
+   711→                  <CardDescription className="mt-1">{t.feedDeskripsi}</CardDescription>
+   712→                </div>
+   713→                <div className="flex items-center gap-2">
+   714→                  <CameraSourceDialog t={t} onSaved={refreshDevice} />
+   715→                  <Badge
+   716→                    variant="outline"
+   717→                    className={`gap-1.5 px-2.5 py-1 font-semibold ${
+   718→                      sessionActive
+   719→                        ? "border-emerald-900 bg-emerald-950 text-emerald-400"
+   720→                        : "border-zinc-700 bg-zinc-900 text-zinc-400"
+   721→                    }`}
+   722→                  >
+   723→                    <LiveDot active={sessionActive} />
+   724→                    {sessionActive ? t.live : t.idle}
+   725→                  </Badge>
+   726→                </div>
+   727→              </div>
+   728→            </CardHeader>
+   729→            <CardContent className="p-0">
+   730→              <div className="relative mx-4 mb-4 overflow-hidden rounded-lg border border-zinc-800 bg-black sm:mx-6">
+   731→                <div className="aspect-video w-full">
+   732→                  <VideoFeed
+   733→                    url={ayamApi.videoFeedUrl()}
+   734→                    connectingText={t.kameraTerputus}
+   735→                    errorTitle={t.kameraGagal}
+   736→                    errorDesc={t.kameraGagalDesc}
+   737→                    retryLabel={lang === "id" ? "Coba lagi" : "Retry"}
+   738→                    autoRetryKey={recoveryTick}
+   739→                  />
+   740→                </div>
+   741→
+   742→                {/* overlay footer info */}
+   743→                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-800 bg-zinc-950/90 px-3 py-2 text-[11px] text-zinc-500">
+   744→                  <span className="inline-flex items-center gap-1.5">
+   745→                    <Crosshair className="h-3 w-3 text-amber-400" />
+   746→                    {t.sumberKamera}:{" "}
+   747→                    {device
+   748→                      ? device.camera_source.startsWith("rtsp")
+   749→                        ? "RTSP CCTV Dahua"
+   750→                        : t.fileVideo
+   751→                      : "…"}
+   752→                  </span>
+   753→                  <span className="inline-flex items-center gap-3">
+   754→                    <span>
+   755→                      {t.resolusi}: {device?.camera_resolution ?? "—"}
+   756→                    </span>
+   757→                    <span>
+   758→                      {t.fps}: {device?.camera_fps ?? "—"}
+   759→                    </span>
+   760→                  </span>
+   761→                </div>
+   762→                {device?.camera_error ? (
+   763→                  <div className="flex items-start gap-2 border-t border-red-500/30 bg-red-500/10 px-3 py-2 text-[11px] text-red-300">
+   764→                    <Info className="mt-0.5 h-3 w-3 shrink-0" />
+   765→                    <span className="min-w-0">
+   766→                      <span className="font-semibold">{t.kameraErrorAktif}:{" "}</span>
+   767→                      {device.camera_error}
+   768→                    </span>
+   769→                  </div>
+   770→                ) : null}
+   771→              </div>
+   772→            </CardContent>
+   773→          </Card>
+   774→
+   775→          {/* ---------- Session control ---------- */}
+   776→          <Card className="border-zinc-800 bg-zinc-900/60">
+   777→            <CardHeader className="pb-3">
+   778→              <CardTitle className="flex items-center gap-2 text-base">
+   779→                <Play className="h-4 w-4 text-amber-400" />
+   780→                {t.kontrolSesi}
+   781→              </CardTitle>
+   782→              <CardDescription className="mt-1">{t.kontrolSesiDesc}</CardDescription>
+   783→            </CardHeader>
+   784→            <CardContent className="space-y-4">
+   785→              <div className="space-y-1.5">
+   786→                <Label htmlFor="asal" className="text-zinc-400">
+   787→                  {t.asalAyam} <span className="text-amber-500">*</span>
+   788→                </Label>
+   789→                <Input
+   790→                  id="asal"
+   791→                  value={asalAyam}
+   792→                  onChange={(e) => setAsalAyam(e.target.value)}
+   793→                  placeholder={t.asalAyamPh}
+   794→                  disabled={sessionActive}
+   795→                  list="asal-ayam-options"
+   796→                  aria-required="true"
+   797→                  aria-invalid={!canStart}
+   798→                  className={`border-zinc-800 bg-zinc-950 text-zinc-100 placeholder:text-zinc-600 focus-visible:ring-amber-500 ${
+   799→                    !canStart ? "border-amber-500/40" : ""
+   800→                  }`}
+   801→                />
+   802→                <datalist id="asal-ayam-options">
+   803→                  {originOptions.map((o) => (
+   804→                    <option key={o} value={o} />
+   805→                  ))}
+   806→                </datalist>
+   807→                {!canStart && !sessionActive ? (
+   808→                  <p className="flex items-center gap-1 text-[11px] text-amber-500/90">
+   809→                    <Info className="h-3 w-3" /> {t.asalAyamRequired}
+   810→                  </p>
+   811→                ) : null}
+   812→              </div>
+   813→              <div className="grid grid-cols-2 gap-3">
+   814→                <div className="space-y-1.5">
+   815→                  <Label htmlFor="tgl" className="text-zinc-400">
+   816→                    {t.tanggal}
+   817→                  </Label>
+   818→                  <Input
+   819→                    id="tgl"
+   820→                    type="date"
+   821→                    value={tanggal}
+   822→                    onChange={(e) => setTanggal(e.target.value)}
+   823→                    disabled={sessionActive}
+   824→                    className="border-zinc-800 bg-zinc-950 text-zinc-100 focus-visible:ring-amber-500"
+   825→                  />
+   826→                </div>
+   827→                <div className="space-y-1.5">
+   828→                  <Label htmlFor="jam" className="text-zinc-400">
+   829→                    {t.jam}
+   830→                  </Label>
+   831→                  <Input
+   832→                    id="jam"
+   833→                    type="time"
+   834→                    value={jam}
+   835→                    onChange={(e) => setJam(e.target.value)}
+   836→                    disabled={sessionActive}
+   837→                    className="border-zinc-800 bg-zinc-950 text-zinc-100 focus-visible:ring-amber-500"
+   838→                  />
+   839→                </div>
+   840→              </div>
+   841→              <div className="space-y-1.5">
+   842→                <Label htmlFor="ket" className="text-zinc-400">
+   843→                  {t.keterangan}
+   844→                </Label>
+   845→                <Input
+   846→                  id="ket"
+   847→                  value={keterangan}
+   848→                  onChange={(e) => setKeterangan(e.target.value)}
+   849→                  placeholder={t.keteranganPh}
+   850→                  disabled={sessionActive}
+   851→                  className="border-zinc-800 bg-zinc-950 text-zinc-100 placeholder:text-zinc-600 focus-visible:ring-amber-500"
+   852→                />
+   853→              </div>
+   854→
+   855→              {/* active session info */}
+   856→              {sessionActive && stats.session_data?.asal_ayam ? (
+   857→                <motion.div
+   858→                  initial={{ opacity: 0, scale: 0.98 }}
+   859→                  animate={{ opacity: 1, scale: 1 }}
+   860→                  className="rounded-lg border border-emerald-900/60 bg-emerald-950/40 p-3 text-xs"
+   861→                >
+   862→                  <p className="mb-1.5 flex items-center gap-1.5 font-semibold text-emerald-400">
+   863→                    <LiveDot active /> {t.aktifBerjalan}
+   864→                  </p>
+   865→                  <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-zinc-400">
+   866→                    <span className="truncate">
+   867→                      {t.asalAyam}:{" "}
+   868→                      <span className="font-medium text-zinc-200">
+   869→                        {stats.session_data.asal_ayam}
+   870→                      </span>
+   871→                    </span>
+   872→                    <span className="inline-flex items-center gap-1">
+   873→                      <Timer className="h-3 w-3 text-emerald-500" />
+   874→                      {t.durasiBerjalan}:{" "}
+   875→                      <span className="font-mono font-semibold tabular-nums text-emerald-400">
+   876→                        {elapsedLabel}
+   877→                      </span>
+   878→                    </span>
+   879→                    <span>
+   880→                      {t.tanggal}:{" "}
+   881→                      <span className="font-medium text-zinc-200">
+   882→                        {stats.session_data.tanggal}
+   883→                      </span>
+   884→                    </span>
+   885→                    <span>
+   886→                      {t.jam}:{" "}
+   887→                      <span className="font-medium text-zinc-200">
+   888→                        {stats.session_data.jam}
+   889→                      </span>
+   890→                    </span>
+   891→                    <span className="truncate">
+   892→                      {t.totalAyam}:{" "}
+   893→                      <span className="font-bold tabular-nums text-emerald-400">
+   894→                        {stats.count}
+   895→                      </span>
+   896→                    </span>
+   897→                  </div>
+   898→                </motion.div>
+   899→              ) : null}
+   900→
+   901→              {/* action buttons */}
+   902→              <div className="flex flex-col gap-2 pt-1">
+   903→                {sessionActive ? (
+   904→                  <Button
+   905→                    onClick={handleStop}
+   906→                    disabled={busy === "stop"}
+   907→                    className="h-11 bg-red-600 font-semibold text-white hover:bg-red-700 focus-visible:ring-red-500"
+   908→                  >
+   909→                    {busy === "stop" ? (
+   910→                      <>
+   911→                        <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+   912→                        {t.menghentikan}
+   913→                      </>
+   914→                    ) : (
+   915→                      <>
+   916→                        <Square className="mr-2 h-4 w-4" />
+   917→                        {t.hentikan}
+   918→                      </>
+   919→                    )}
+   920→                  </Button>
+   921→                ) : (
+   922→                  <Button
+   923→                    onClick={handleStart}
+   924→                    disabled={busy === "start" || !canStart}
+   925→                    title={!canStart ? t.asalAyamRequired : undefined}
+   926→                    className="h-11 bg-amber-500 font-semibold text-zinc-950 hover:bg-amber-400 focus-visible:ring-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
+   927→                  >
+   928→                    {busy === "start" ? (
+   929→                      <>
+   930→                        <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-zinc-900/40 border-t-zinc-900" />
+   931→                        {t.memuat}
+   932→                      </>
+   933→                    ) : (
+   934→                      <>
+   935→                        <Play className="mr-2 h-4 w-4" />
+   936→                        {t.mulaiHitung}
+   937→                      </>
+   938→                    )}
+   939→                  </Button>
+   940→                )}
+   941→                <Button
+   942→                  onClick={handleReset}
+   943→                  disabled={busy === "reset" || sessionActive}
+   944→                  variant="outline"
+   945→                  className="h-10 border-zinc-800 bg-transparent text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100"
+   946→                >
+   947→                  <RotateCcw className="mr-2 h-4 w-4" />
+   948→                  {t.reset}
+   949→                </Button>
+   950→              </div>
+   951→            </CardContent>
+   952→          </Card>
+   953→        </motion.section>
+   954→
+   955→        {/* ---- Charts row: trend + weekly ---- */}
+   956→        <motion.section
+   957→          className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2"
+   958→          initial={fadeUp.initial}
+   959→          animate={fadeUp.animate}
+   960→          transition={{ duration: 0.35, delay: 0.12 }}
+   961→        >
+   962→          <SessionTrendChart
+   963→            points={timeline}
+   964→            total={stats.count}
+   965→            active={sessionActive}
+   966→            t={t}
+   967→          />
+   968→
+   969→          {/* Weekly summary */}
+   970→          <Card className="border-zinc-800 bg-zinc-900/60">
+   971→            <CardHeader className="pb-2">
+   972→              <div className="flex flex-wrap items-center justify-between gap-2">
+   973→                <div>
+   974→                  <CardTitle className="flex items-center gap-2 text-base">
+   975→                    <History className="h-4 w-4 text-sky-400" />
+   976→                    {t.ringkasan7hari}
+   977→                  </CardTitle>
+   978→                  <CardDescription className="mt-1">{t.ayamPerHari}</CardDescription>
+   979→                </div>
+   980→                <div className="flex items-center gap-1.5">
+   981→                  <Badge
+   982→                    variant="outline"
+   983→                    className="border-sky-900 bg-sky-950 px-2 py-1 text-[10px] font-semibold text-sky-400"
+   984→                  >
+   985→                    {t.hariIni}: {daily.total_sessions}
+   986→                  </Badge>
+   987→                  <Badge
+   988→                    variant="outline"
+   989→                    className="border-amber-900 bg-amber-950 px-2 py-1 text-[10px] font-semibold text-amber-400"
+   990→                  >
+   991→                    {t.totalHariIni}: {(daily.total_count ?? 0).toLocaleString()}
+   992→                  </Badge>
+   993→                </div>
+   994→              </div>
+   995→            </CardHeader>
+   996→            <CardContent>
+   997→              <div className="h-44 w-full">
+   998→                <ResponsiveContainer width="100%" height="100%">
+   999→                  <BarChart data={weeklyData} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+  1000→                    <defs>
+  1001→                      <linearGradient id="barFill" x1="0" y1="0" x2="0" y2="1">
+  1002→                        <stop offset="0%" stopColor="#38bdf8" stopOpacity={0.95} />
+  1003→                        <stop offset="100%" stopColor="#0ea5e9" stopOpacity={0.35} />
+  1004→                      </linearGradient>
+  1005→                    </defs>
+  1006→                    <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 3" vertical={false} />
+  1007→                    <XAxis
+  1008→                      dataKey="day"
+  1009→                      tick={{ fill: "var(--chart-tick)", fontSize: 11 }}
+  1010→                      tickLine={false}
+  1011→                      axisLine={{ stroke: "var(--chart-grid)" }}
+  1012→                    />
+  1013→                    <YAxis
+  1014→                      tick={{ fill: "var(--chart-tick)", fontSize: 11 }}
+  1015→                      tickLine={false}
+  1016→                      axisLine={false}
+  1017→                      allowDecimals={false}
+  1018→                    />
+  1019→                    <ReTooltip
+  1020→                      cursor={{ fill: "#18181b", opacity: 0.6 }}
+  1021→                      contentStyle={{
+  1022→                        background: "#09090b",
+  1023→                        border: "1px solid #3f3f46",
+  1024→                        borderRadius: 8,
+  1025→                        fontSize: 12,
+  1026→                        color: "#f4f4f5",
+  1027→                      }}
+  1028→                      formatter={(value: number | string) => [value, t.totalAyam]}
+  1029→                    />
+  1030→                    <Bar
+  1031→                      dataKey="total"
+  1032→                      fill="url(#barFill)"
+  1033→                      radius={[4, 4, 0, 0]}
+  1034→                      maxBarSize={44}
+  1035→                    />
+  1036→                  </BarChart>
+  1037→                </ResponsiveContainer>
+  1038→              </div>
+  1039→            </CardContent>
+  1040→          </Card>
+  1041→        </motion.section>
+  1042→
+  1043→        {/* ---- Hardware + Exports ---- */}
+  1044→        <motion.section
+  1045→          className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2"
+  1046→          initial={fadeUp.initial}
+  1047→          animate={fadeUp.animate}
+  1048→          transition={{ duration: 0.35, delay: 0.18 }}
+  1049→        >
+  1050→          {/* Hardware detail */}
+  1051→          <Card className="border-zinc-800 bg-zinc-900/60">
+  1052→            <CardHeader className="pb-3">
+  1053→              <CardTitle className="flex items-center gap-2 text-base">
+  1054→                <Cpu className="h-4 w-4 text-violet-400" />
+  1055→                {t.infoHardware}
+  1056→              </CardTitle>
+  1057→              <CardDescription>{t.infoHardwareDesc}</CardDescription>
+  1058→            </CardHeader>
+  1059→            <CardContent>
+  1060→              {device ? (
+  1061→                <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+  1062→                  <div>
+  1063→                    <dt className="text-xs text-zinc-500">{t.backend}</dt>
+  1064→                    <dd className="mt-0.5 font-semibold uppercase">
+  1065→                      {device.backend}
+  1066→                      {device.device && device.device !== device.backend ? (
+  1067→                        <span className="ml-1.5 text-xs font-normal text-zinc-400">
+  1068→                          ({device.device})
+  1069→                        </span>
+  1070→                      ) : null}
+  1071→                    </dd>
+  1072→                  </div>
+  1073→                  <div>
+  1074→                    <dt className="text-xs text-zinc-500">{t.vendor}</dt>
+  1075→                    <dd className="mt-0.5 font-semibold">{device.vendor}</dd>
+  1076→                  </div>
+  1077→                  <div>
+  1078→                    <dt className="text-xs text-zinc-500">{t.presisi}</dt>
+  1079→                    <dd className="mt-0.5 font-semibold">{device.precision}</dd>
+  1080→                  </div>
+  1081→                  <div>
+  1082→                    <dt className="text-xs text-zinc-500">Confidence</dt>
+  1083→                    <dd className="mt-0.5 font-semibold tabular-nums">
+  1084→                      {(device.confidence * 100).toFixed(0)}%
+  1085→                    </dd>
+  1086→                  </div>
+  1087→                  <div className="col-span-2">
+  1088→                    <dt className="text-xs text-zinc-500">{t.model}</dt>
+  1089→                    <dd className="mt-0.5 flex items-center gap-2 font-mono text-xs text-zinc-300">
+  1090→                      <span className="truncate">{device.model_path}</span>
+  1091→                      <Badge
+  1092→                        variant="outline"
+  1093→                        className={`shrink-0 px-1.5 py-0 text-[10px] ${
+  1094→                          device.model_loaded
+  1095→                            ? "border-emerald-900 bg-emerald-950 text-emerald-400"
+  1096→                            : "border-red-900 bg-red-950 text-red-400"
+  1097→                        }`}
+  1098→                      >
+  1099→                        {device.model_loaded ? "LOADED" : "ERROR"}
+  1100→                      </Badge>
+  1101→                    </dd>
+  1102→                  </div>
+  1103→                  <div className="col-span-2 rounded-md bg-zinc-950/60 p-2.5">
+  1104→                    <dt className="flex items-center gap-1.5 text-xs text-zinc-500">
+  1105→                      <Info className="h-3 w-3" /> {t.alasan}
+  1106→                    </dt>
+  1107→                    <dd className="mt-1 text-xs leading-relaxed text-zinc-400">
+  1108→                      {device.reason}
+  1109→                    </dd>
+  1110→                  </div>
+  1111→                </dl>
+  1112→              ) : (
+  1113→                <div className="space-y-3">
+  1114→                  {[0, 1, 2, 3].map((i) => (
+  1115→                    <Skeleton key={i} className="h-5 w-full bg-zinc-800" />
+  1116→                  ))}
+  1117→                </div>
+  1118→              )}
+  1119→            </CardContent>
+  1120→          </Card>
+  1121→
+  1122→          {/* Exports list */}
+  1123→          <Card className="border-zinc-800 bg-zinc-900/60">
+  1124→            <CardHeader className="pb-3">
+  1125→              <div className="flex flex-wrap items-center justify-between gap-2">
+  1126→                <div>
+  1127→                  <CardTitle className="flex items-center gap-2 text-base">
+  1128→                    <FileSpreadsheet className="h-4 w-4 text-emerald-400" />
+  1129→                    {t.fileExcel}
+  1130→                  </CardTitle>
+  1131→                  <CardDescription className="mt-1">{t.fileExcelDesc}</CardDescription>
+  1132→                </div>
+  1133→                <Badge
+  1134→                  variant="outline"
+  1135→                  className="border-emerald-900 bg-emerald-950 px-2 py-1 text-[10px] font-semibold text-emerald-400"
+  1136→                >
+  1137→                  {exports.length} file
+  1138→                </Badge>
+  1139→              </div>
+  1140→            </CardHeader>
+  1141→            <CardContent>
+  1142→              {sortedExports.length === 0 ? (
+  1143→                <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-800 py-10 text-center">
+  1144→                  <FileSpreadsheet className="h-8 w-8 text-zinc-700" />
+  1145→                  <p className="text-sm font-medium text-zinc-400">{t.belumAdaFile}</p>
+  1146→                  <p className="text-xs text-zinc-600">{t.belumAdaFileDesc}</p>
+  1147→                </div>
+  1148→              ) : (
+  1149→                <div className="ayam-scroll max-h-96 space-y-2 overflow-y-auto pr-1">
+  1150→                  {sortedExports.map((f) => (
+  1151→                    <div
+  1152→                      key={f.name}
+  1153→                      className="group flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 transition-colors hover:border-zinc-700 hover:bg-zinc-900"
+  1154→                    >
+  1155→                      <div className="flex min-w-0 items-center gap-3">
+  1156→                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-emerald-500/15 text-emerald-400">
+  1157→                          <FileSpreadsheet className="h-4 w-4" />
+  1158→                        </div>
+  1159→                        <div className="min-w-0">
+  1160→                          <p className="truncate text-sm font-medium text-zinc-200">
+  1161→                            {f.name}
+  1162→                          </p>
+  1163→                          <p className="text-[11px] text-zinc-500">
+  1164→                            {f.modified_str} · {f.size_kb} KB
+  1165→                          </p>
+  1166→                        </div>
+  1167→                      </div>
+  1168→                      <div className="flex shrink-0 items-center gap-1.5">
+  1169→                        <a
+  1170→                          href={ayamApi.csvUrl(f.name)}
+  1171→                          download
+  1172→                          title={t.unduhCsv}
+  1173→                          aria-label={`${t.unduhCsv} ${f.name}`}
+  1174→                          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-zinc-800 bg-zinc-900 text-zinc-400 transition-colors hover:border-sky-500/50 hover:bg-sky-500 hover:text-zinc-950"
+  1175→                        >
+  1176→                          <FileDown className="h-4 w-4" />
+  1177→                        </a>
+  1178→                        <a
+  1179→                          href={ayamApi.downloadUrl(f.name)}
+  1180→                          download
+  1181→                          className="inline-flex h-9 items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900 px-3 text-xs font-semibold text-zinc-300 transition-colors hover:border-amber-500/50 hover:bg-amber-500 hover:text-zinc-950"
+  1182→                          aria-label={`${t.unduh} ${f.name}`}
+  1183→                        >
+  1184→                          <Download className="h-3.5 w-3.5" />
+  1185→                          <span className="hidden sm:inline">{t.unduh}</span>
+  1186→                        </a>
+  1187→                      </div>
+  1188→                    </div>
+  1189→                  ))}
+  1190→                </div>
+  1191→              )}
+  1192→            </CardContent>
+  1193→          </Card>
+  1194→        </motion.section>
+  1195→
+  1196→        {/* ---- History table ---- */}
+  1197→        <motion.section
+  1198→          className="mt-4"
+  1199→          initial={fadeUp.initial}
+  1200→          animate={fadeUp.animate}
+  1201→          transition={{ duration: 0.35, delay: 0.24 }}
+  1202→        >
+  1203→          <Card className="border-zinc-800 bg-zinc-900/60">
+  1204→            <CardHeader className="pb-3">
+  1205→              <div className="flex flex-wrap items-center justify-between gap-3">
+  1206→                <div>
+  1207→                  <CardTitle className="flex items-center gap-2 text-base">
+  1208→                    <History className="h-4 w-4 text-sky-400" />
+  1209→                    {t.riwayatSesi}
+  1210→                  </CardTitle>
+  1211→                  <CardDescription className="mt-1">{t.riwayatDesc}</CardDescription>
+  1212→                </div>
+  1213→                {/* filter controls */}
+  1214→                <div className="flex flex-wrap items-center gap-2">
+  1215→                  <div className="relative">
+  1216→                    <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-600" />
+  1217→                    <Input
+  1218→                      value={historySearch}
+  1219→                      onChange={(e) => setHistorySearch(e.target.value)}
+  1220→                      placeholder={t.cariRiwayat}
+  1221→                      className="h-9 w-44 border-zinc-800 bg-zinc-950 pl-8 text-xs text-zinc-100 placeholder:text-zinc-600 focus-visible:ring-amber-500"
+  1222→                    />
+  1223→                  </div>
+  1224→                  <Input
+  1225→                    type="date"
+  1226→                    value={historyDate}
+  1227→                    onChange={(e) => setHistoryDate(e.target.value)}
+  1228→                    aria-label={t.filterTanggal}
+  1229→                    className="h-9 w-36 border-zinc-800 bg-zinc-950 text-xs text-zinc-100 focus-visible:ring-amber-500"
+  1230→                  />
+  1231→                  {historySearch || historyDate ? (
+  1232→                    <Button
+  1233→                      size="sm"
+  1234→                      variant="ghost"
+  1235→                      onClick={() => {
+  1236→                        setHistorySearch("");
+  1237→                        setHistoryDate("");
+  1238→                      }}
+  1239→                      className="h-9 px-2 text-xs text-zinc-400 hover:text-zinc-200"
+  1240→                    >
+  1241→                      {t.tampilkanSemua}
+  1242→                    </Button>
+  1243→                  ) : null}
+  1244→                  <Badge variant="outline" className="border-zinc-800 px-2 py-1 text-[10px] text-zinc-500">
+  1245→                    {filteredHistory.length} {t.hasilFilter}
+  1246→                  </Badge>
+  1247→                </div>
+  1248→              </div>
+  1249→            </CardHeader>
+  1250→            <CardContent>
+  1251→              {history.history.length === 0 ? (
+  1252→                <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-800 py-10 text-center">
+  1253→                  <History className="h-8 w-8 text-zinc-700" />
+  1254→                  <p className="text-sm font-medium text-zinc-400">{t.belumAdaRiwayat}</p>
+  1255→                  <p className="text-xs text-zinc-600">{t.belumAdaRiwayatDesc}</p>
+  1256→                </div>
+  1257→              ) : filteredHistory.length === 0 ? (
+  1258→                <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-800 py-10 text-center">
+  1259→                  <Search className="h-8 w-8 text-zinc-700" />
+  1260→                  <p className="text-sm font-medium text-zinc-400">
+  1261→                    {lang === "id" ? "Tidak ada hasil" : "No results"}
+  1262→                  </p>
+  1263→                </div>
+  1264→              ) : (
+  1265→                <div className="ayam-scroll max-h-96 overflow-y-auto rounded-lg border border-zinc-800">
+  1266→                  <Table>
+  1267→                    <TableHeader className="sticky top-0 z-10 bg-zinc-900">
+  1268→                      <TableRow className="border-zinc-800 hover:bg-zinc-900">
+  1269→                        <TableHead className="text-zinc-500">#</TableHead>
+  1270→                        <TableHead className="text-zinc-500">{t.asalAyam}</TableHead>
+  1271→                        <TableHead className="text-zinc-500">{t.tanggal}</TableHead>
+  1272→                        <TableHead className="text-zinc-500">{t.jam}</TableHead>
+  1273→                        <TableHead className="text-right text-zinc-500">
+  1274→                          {t.total}
+  1275→                        </TableHead>
+  1276→                        <TableHead className="text-right text-zinc-500">
+  1277→                          {t.selesai}
+  1278→                        </TableHead>
+  1279→                        <TableHead className="w-16 text-right text-zinc-500">
+  1280→                          <span className="sr-only">{t.hapus}</span>
+  1281→                          <Trash2 className="ml-auto h-3.5 w-3.5" />
+  1282→                        </TableHead>
+  1283→                      </TableRow>
+  1284→                    </TableHeader>
+  1285→                    <TableBody>
+  1286→                      {filteredHistory.map((h) => (
+  1287→                        <TableRow
+  1288→                          key={h.id}
+  1289→                          className="group cursor-pointer border-zinc-800/70 transition-colors hover:bg-amber-500/5"
+  1290→                          onClick={() => openDetail(h)}
+  1291→                          title={t.lihatDetail}
+  1292→                        >
+  1293→                          <TableCell className="font-mono text-xs text-zinc-500">
+  1294→                            {h.id}
+  1295→                          </TableCell>
+  1296→                          <TableCell className="max-w-40 truncate font-medium text-zinc-200">
+  1297→                            <span className="inline-flex items-center gap-1.5">
+  1298→                              {h.asal_ayam}
+  1299→                              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-600 opacity-0 transition-opacity group-hover:opacity-100" />
+  1300→                            </span>
+  1301→                          </TableCell>
+  1302→                          <TableCell className="text-zinc-400">{h.tanggal}</TableCell>
+  1303→                          <TableCell className="text-zinc-400">{h.jam}</TableCell>
+  1304→                          <TableCell className="text-right font-bold tabular-nums text-amber-400">
+  1305→                            {h.total_count?.toLocaleString() ?? 0}
+  1306→                          </TableCell>
+  1307→                          <TableCell className="text-right font-mono text-[11px] text-zinc-500">
+  1308→                            {h.end_time
+  1309→                              ? new Date(h.end_time).toLocaleTimeString(
+  1310→                                  lang === "id" ? "id-ID" : "en-US"
+  1311→                                )
+  1312→                              : "—"}
+  1313→                          </TableCell>
+  1314→                          <TableCell className="text-right">
+  1315→                            <Button
+  1316→                              size="icon"
+  1317→                              variant="ghost"
+  1318→                              aria-label={`${t.hapus} #${h.id} (${h.asal_ayam})`}
+  1319→                              title={t.hapus}
+  1320→                              disabled={deleteBusy}
+  1321→                              onClick={(e) => {
+  1322→                                e.stopPropagation();
+  1323→                                setDeleteTarget(h);
+  1324→                              }}
+  1325→                              className="h-8 w-8 text-zinc-600 opacity-0 transition-all hover:bg-red-500/15 hover:text-red-400 focus-visible:opacity-100 group-hover:opacity-100"
+  1326→                            >
+  1327→                              <Trash2 className="h-3.5 w-3.5" />
+  1328→                            </Button>
+  1329→                          </TableCell>
+  1330→                        </TableRow>
+  1331→                      ))}
+  1332→                    </TableBody>
+  1333→                  </Table>
+  1334→                </div>
+  1335→              )}
+  1336→            </CardContent>
+  1337→          </Card>
+  1338→        </motion.section>
+  1339→      </main>
+  1340→
+  1341→      {/* ================= DIALOGS ================= */}
+  1342→      <SessionDetailDialog
+  1343→        session={detailSession}
+  1344→        open={detailOpen}
+  1345→        onOpenChange={setDetailOpen}
+  1346→        t={t}
+  1347→        lang={lang}
+  1348→      />
+  1349→
+  1350→      <AlertDialog
+  1351→        open={deleteTarget !== null}
+  1352→        onOpenChange={(o) => {
+  1353→          if (!o) setDeleteTarget(null);
+  1354→        }}
+  1355→      >
+  1356→        <AlertDialogContent className="border-zinc-800 bg-zinc-950 text-zinc-100">
+  1357→          <AlertDialogHeader>
+  1358→            <AlertDialogTitle className="flex items-center gap-2">
+  1359→              <Trash2 className="h-4 w-4 text-red-400" />
+  1360→              {t.hapusSesi}
+  1361→            </AlertDialogTitle>
+  1362→            <AlertDialogDescription className="text-zinc-400">
+  1363→              {t.hapusSesiDesc}
+  1364→              {deleteTarget ? (
+  1365→                <span className="mt-2 block rounded-md bg-zinc-900 p-2 font-mono text-xs text-zinc-300">
+  1366→                  #{deleteTarget.id} — {deleteTarget.asal_ayam} ({deleteTarget.tanggal}) ·{" "}
+  1367→                  {deleteTarget.total_count} {t.totalAyam.toLowerCase()}
+  1368→                </span>
+  1369→              ) : null}
+  1370→            </AlertDialogDescription>
+  1371→          </AlertDialogHeader>
+  1372→          <AlertDialogFooter>
+  1373→            <AlertDialogCancel
+  1374→              disabled={deleteBusy}
+  1375→              className="border-zinc-800 bg-transparent text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100"
+  1376→            >
+  1377→              {t.batalkan}
+  1378→            </AlertDialogCancel>
+  1379→            <AlertDialogAction
+  1380→              disabled={deleteBusy}
+  1381→              onClick={(e) => {
+  1382→                e.preventDefault();
+  1383→                handleDelete();
+  1384→              }}
+  1385→              className="bg-red-600 font-semibold text-white hover:bg-red-700"
+  1386→            >
+  1387→              {deleteBusy ? (
+  1388→                <>
+  1389→                  <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+  1390→                  {t.menghapus}
+  1391→                </>
+  1392→              ) : (
+  1393→                t.yaHapus
+  1394→              )}
+  1395→            </AlertDialogAction>
+  1396→          </AlertDialogFooter>
+  1397→        </AlertDialogContent>
+  1398→      </AlertDialog>
+  1399→
+  1400→      {/* ================= FOOTER (sticky bottom) ================= */}
+  1401→      <footer className="mt-auto border-t border-zinc-800 bg-zinc-950 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] pt-4">
+  1402→        <div className="mx-auto flex w-full max-w-7xl flex-col items-center justify-between gap-2 px-4 text-xs text-zinc-600 sm:flex-row sm:px-6">
+  1403→          <p className="flex items-center gap-1.5">
+  1404→            <Bird className="h-3.5 w-3.5 text-amber-500/70" />
+  1405→            {t.footerText}
+  1406→          </p>
+  1407→          <p className="font-mono text-[10px] text-zinc-700">{t.footerHint}</p>
+  1408→        </div>
+  1409→      </footer>
+  1410→    </div>
+  1411→  );
+  1412→}
+  1413→

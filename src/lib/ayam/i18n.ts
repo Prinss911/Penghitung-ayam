@@ -174,6 +174,27 @@ export const dict = {
     notifTidakDidukung: "Browser tidak mendukung notifikasi",
     notifMilestoneTitle: "Milestone tercapai!",
     notifMilestoneBody: "ayam telah terhitung",
+    // Manual count adjustment
+    koreksiHitung: "Koreksi Manual",
+    koreksiHint: "Sesuaikan bila deteksi meleset / kurang",
+    koreksiPlus: "Tambah 1 ayam",
+    koreksiMin: "Kurangi 1 ayam",
+    koreksiBerhasil: "Hitungan dikoreksi",
+    koreksiGagal: "Gagal mengoreksi hitungan",
+    // Video upload
+    unggahVideo: "Unggah Video",
+    unggahVideoDesc: "Unggah rekaman lini produksi lalu langsung jadikan sumber deteksi (maks 300 MB)",
+    jatuhkanVideo: "Tarik & letakkan video di sini",
+    atauPilih: "atau pilih file",
+    extDiizinkan: "mp4 · avi · mov · mkv",
+    mengunggah: "Mengunggah",
+    unggahBerhasil: "Video terunggah & dijadikan sumber",
+    unggahGagal: "Gagal mengunggah video",
+    extSalah: "Format tidak didukung — gunakan mp4/avi/mov/mkv",
+    ukuranMax: "Ukuran maksimum 300 MB",
+    // Detail chart
+    grafikSesi: "Grafik Kumulatif",
+    grafikSesiKosong: "Tidak ada data timeline untuk sesi ini",
   },
   en: {
     appName: "Ayam Counter Pro",
@@ -335,6 +356,27 @@ export const dict = {
     notifTidakDidukung: "Browser does not support notifications",
     notifMilestoneTitle: "Milestone reached!",
     notifMilestoneBody: "chickens have been counted",
+    // Manual count adjustment
+    koreksiHitung: "Manual Adjustment",
+    koreksiHint: "Adjust when detection misses or over-counts",
+    koreksiPlus: "Add 1 chicken",
+    koreksiMin: "Subtract 1 chicken",
+    koreksiBerhasil: "Count adjusted",
+    koreksiGagal: "Failed to adjust count",
+    // Video upload
+    unggahVideo: "Upload Video",
+    unggahVideoDesc: "Upload production line footage and set it as detection source directly (max 300 MB)",
+    jatuhkanVideo: "Drag & drop a video here",
+    atauPilih: "or browse files",
+    extDiizinkan: "mp4 · avi · mov · mkv",
+    mengunggah: "Uploading",
+    unggahBerhasil: "Video uploaded & set as source",
+    unggahGagal: "Failed to upload video",
+    extSalah: "Unsupported format — use mp4/avi/mov/mkv",
+    ukuranMax: "Maximum size is 300 MB",
+    // Detail chart
+    grafikSesi: "Cumulative Chart",
+    grafikSesiKosong: "No timeline data for this session",
   },
 } as const;
 

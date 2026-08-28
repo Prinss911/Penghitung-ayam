@@ -7,8 +7,8 @@
  * Pergantian diterapkan asinkron oleh capture thread (lihat /api/camera-source).
  */
 
-import { useCallback, useEffect, useState } from "react";
-import { Check, Loader2, RadioTower, Video, Webcam } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Check, CloudUpload, Loader2, RadioTower, Video, Webcam } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -40,12 +40,24 @@ function sourceLabel(src: string, t: Dict): string {
   return `${t.videoLokal}: ${name}`;
 }
 
+const ALLOWED_EXT = [".mp4", ".avi", ".mov", ".mkv"];
+const MAX_UPLOAD_MB = 300;
+
+function videoExtOk(name: string): boolean {
+  const ext = name.slice(name.lastIndexOf(".")).toLowerCase();
+  return ALLOWED_EXT.includes(ext);
+}
+
 export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [applying, setApplying] = useState(false);
   const [info, setInfo] = useState<CameraSourceInfo | null>(null);
   const [custom, setCustom] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [uploadPct, setUploadPct] = useState(0);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -91,6 +103,39 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
   );
 
   const current = info?.source ?? "";
+
+  const handleFile = useCallback(
+    async (file: File | undefined | null) => {
+      if (!file || uploading) return;
+      if (!videoExtOk(file.name)) {
+        toast.error(t.unggahGagal, { description: t.extSalah });
+        return;
+      }
+      if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+        toast.error(t.unggahGagal, { description: t.ukuranMax });
+        return;
+      }
+      setUploading(true);
+      setUploadPct(0);
+      try {
+        const res = await ayamApi.uploadCameraVideo(file, setUploadPct);
+        toast.success(t.unggahBerhasil, {
+          description: `${res.name} · ${res.size_mb} MB`,
+        });
+        await load();
+        onSaved?.();
+      } catch (e) {
+        toast.error(t.unggahGagal, {
+          description: e instanceof Error ? e.message : undefined,
+        });
+      } finally {
+        setUploading(false);
+        setUploadPct(0);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
+    },
+    [uploading, t, load, onSaved]
+  );
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -165,6 +210,74 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
                   {info.error}
                 </p>
               ) : null}
+            </div>
+
+            {/* Upload zone */}
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-zinc-400">{t.unggahVideo}</p>
+              <div
+                role="button"
+                tabIndex={0}
+                aria-label={t.unggahVideo}
+                onClick={() => !uploading && fileInputRef.current?.click()}
+                onKeyDown={(e) => {
+                  if ((e.key === "Enter" || e.key === " ") && !uploading) {
+                    e.preventDefault();
+                    fileInputRef.current?.click();
+                  }
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (!uploading) setDragOver(true);
+                }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragOver(false);
+                  void handleFile(e.dataTransfer.files?.[0]);
+                }}
+                className={`group relative flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed p-5 text-center transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
+                  dragOver
+                    ? "border-amber-400 bg-amber-500/10"
+                    : "border-zinc-700 bg-zinc-900/40 hover:border-amber-500/50 hover:bg-zinc-900"
+                } ${uploading ? "pointer-events-none opacity-70" : ""}`}
+              >
+                {uploading ? (
+                  <>
+                    <CloudUpload className="h-6 w-6 animate-pulse text-amber-400" />
+                    <p className="text-xs font-semibold text-amber-300">
+                      {t.mengunggah}… {uploadPct}%
+                    </p>
+                    <div
+                      className="mt-1 h-1.5 w-full max-w-56 overflow-hidden rounded-full bg-zinc-800"
+                      role="progressbar"
+                      aria-valuenow={uploadPct}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                    >
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-amber-600 to-amber-400 transition-all duration-200"
+                        style={{ width: `${uploadPct}%` }}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <CloudUpload className="h-6 w-6 text-zinc-500 transition-colors group-hover:text-amber-400" />
+                    <p className="text-xs font-medium text-zinc-300">{t.jatuhkanVideo}</p>
+                    <p className="text-[11px] text-zinc-500">
+                      {t.atauPilih} · {t.extDiizinkan}
+                    </p>
+                  </>
+                )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="sr-only"
+                  accept="video/mp4,video/x-msvideo,video/quicktime,video/x-matroska,.mp4,.avi,.mov,.mkv"
+                  onChange={(e) => void handleFile(e.target.files?.[0])}
+                />
+              </div>
             </div>
 
             {/* Demo videos */}

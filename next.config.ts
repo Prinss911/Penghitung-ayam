@@ -25,6 +25,8 @@ const FLASK_PROXY_ROUTES: Array<[string, string]> = [
   ["/api/reset", "/api/reset"],
   ["/api/download/:path*", "/api/download/:path*"],
   ["/api/camera-source", "/api/camera-source"],
+  ["/api/camera-source/:path*", "/api/camera-source/:path*"],
+  ["/api/count/adjust", "/api/count/adjust"],
   ["/video_feed", "/video_feed"],
   ["/socket.io/", "/socket.io/"],
   ["/socket.io/:path*", "/socket.io/:path*"],
@@ -37,6 +39,11 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
+  // FIX: tanpa ini Next.js me-redirect 308 `/socket.io/` → `/socket.io`
+  // (tanpa trailing slash) SEBELUM rewrite jalan → Flask-SocketIO balas 404
+  // dan dashboard yang dibuka langsung dari port :3000 tak pernah dapat
+  // koneksi realtime (selalu fallback "Polling").
+  skipTrailingSlashRedirect: true,
   async rewrites() {
     return {
       beforeFiles: FLASK_PROXY_ROUTES.map(([source, destination]) => ({

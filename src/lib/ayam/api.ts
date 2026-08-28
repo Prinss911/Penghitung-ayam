@@ -99,6 +99,8 @@ export interface HistoryResponse {
 export interface SessionDetail extends HistoryItem {
   keterangan: string;
   file_name: string;
+  /** Snapshot grafik kumulatif sesi (t detik / total) — bila tersimpan */
+  timeline?: TimelinePoint[];
 }
 
 export interface RuntimeSettings {
@@ -197,6 +199,48 @@ export const ayamApi = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ source }),
     }),
+
+  /** Unggah video (multipart) → disimpan di server + langsung jadi sumber kamera.
+   *  Pakai XHR agar bisa melaporkan progres unggah. */
+  uploadCameraVideo: (file: File, onProgress?: (pct: number) => void) =>
+    new Promise<{ status: string; source: string; name: string; size_mb: number }>(
+      (resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", bp("/api/camera-source/upload"));
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable && onProgress) {
+            onProgress(Math.round((e.loaded / e.total) * 100));
+          }
+        };
+        xhr.onload = () => {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            if (xhr.status >= 200 && xhr.status < 300 && data.status === "ok") {
+              resolve(data);
+            } else {
+              reject(new Error(data.message ?? `HTTP ${xhr.status}`));
+            }
+          } catch {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        };
+        xhr.onerror = () => reject(new Error("Network error"));
+        const fd = new FormData();
+        fd.append("file", file);
+        xhr.send(fd);
+      }
+    ),
+
+  /** Koreksi manual hitungan (+1 / -1) saat sesi berjalan */
+  adjustCount: (delta: 1 | -1) =>
+    jsonFetch<{ status: string; count: number; delta: number }>(
+      bp("/api/count/adjust"),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ delta }),
+      }
+    ),
 
   /** Detail satu sesi riwayat */
   getSessionDetail: (id: number) =>

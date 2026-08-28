@@ -202,6 +202,18 @@ export function useAyamDashboard() {
     }
   }, []);
 
+  /** Tarik stats terbaru secara paksa (untuk feedback aksi manual seperti koreksi hitung) */
+  const refreshStats = useCallback(async () => {
+    try {
+      const s = await ayamApi.getStats();
+      if (!mounted.current) return;
+      lastSocketStatsAt.current = 0; // paksa timpa cache socket
+      setStats(s);
+    } catch {
+      /* abaikan — polling berikutnya akan menarik nilai terbaru */
+    }
+  }, []);
+
   // =====================================================
   // Device info (sekali saat mount + retry + dipakai refresh manual)
   // =====================================================
@@ -234,5 +246,6 @@ export function useAyamDashboard() {
     setVideoOk,
     refreshSideData,
     refreshDevice,
+    refreshStats,
   };
 }

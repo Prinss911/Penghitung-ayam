@@ -33,7 +33,10 @@ import {
   Gauge,
   History,
   Info,
+  Loader2,
+  Minus,
   Play,
+  Plus,
   RotateCcw,
   ScanEye,
   Search,
@@ -216,6 +219,7 @@ export default function AyamCounterPage() {
     connMode,
     refreshSideData,
     refreshDevice,
+    refreshStats,
   } = useAyamDashboard();
 
   // ----- form state -----
@@ -224,6 +228,7 @@ export default function AyamCounterPage() {
   const [jam, setJam] = useState("");
   const [keterangan, setKeterangan] = useState("");
   const [busy, setBusy] = useState<"start" | "stop" | "reset" | null>(null);
+  const [adjustBusy, setAdjustBusy] = useState<1 | -1 | null>(null);
 
   // ----- history filter -----
   const [historySearch, setHistorySearch] = useState("");
@@ -237,6 +242,9 @@ export default function AyamCounterPage() {
 
   // ----- milestone & self-healing toast -----
   const lastMilestoneRef = useRef(0);
+  // Tandai observasi count pertama agar toast milestone tidak meledak saat
+  // halaman dimuat di tengah sesi dengan count yang sudah tinggi.
+  const firstCountObserved = useRef(false);
   const prevConnMode = useRef<string>("connecting");
   const [recoveryTick, setRecoveryTick] = useState(0);
 
@@ -354,6 +362,12 @@ export default function AyamCounterPage() {
   useEffect(() => {
     const c = stats.count;
     const STEP = 10;
+    if (!firstCountObserved.current) {
+      // Observasi pertama (termasuk setelah reload): jangan bersuara
+      firstCountObserved.current = true;
+      lastMilestoneRef.current = c;
+      return;
+    }
     if (c < lastMilestoneRef.current) {
       // reset / sesi baru
       lastMilestoneRef.current = c;
@@ -455,6 +469,32 @@ export default function AyamCounterPage() {
       setBusy(null);
     }
   }, [t]);
+
+  // ----- koreksi manual hitung (+1 / -1) saat sesi aktif -----
+  const handleAdjust = useCallback(
+    async (delta: 1 | -1) => {
+      setAdjustBusy(delta);
+      try {
+        const res = await ayamApi.adjustCount(delta);
+        toast.success(`${res.count} ${t.totalAyam.toLowerCase()}`, {
+          description: `${t.koreksiBerhasil} (${delta > 0 ? "+1" : "−1"})`,
+        });
+        await refreshStats();
+      } catch (e) {
+        toast.error(t.koreksiGagal, {
+          description:
+            e instanceof Error && e.message.includes("400")
+              ? lang === "id"
+                ? "Hanya bisa saat sesi berjalan"
+                : "Only available while a session is running"
+              : undefined,
+        });
+      } finally {
+        setAdjustBusy(null);
+      }
+    },
+    [t, lang, refreshStats]
+  );
 
   // ----- hapus sesi riwayat -----
   const handleDelete = useCallback(async () => {
@@ -894,6 +934,56 @@ export default function AyamCounterPage() {
                         {stats.count}
                       </span>
                     </span>
+                  </div>
+
+                  {/* Koreksi manual (+1 / -1) */}
+                  <div className="mt-2.5 border-t border-emerald-900/50 pt-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="flex items-center gap-1 text-[11px] font-semibold text-emerald-300">
+                          <ScanEye className="h-3 w-3" />
+                          {t.koreksiHitung}
+                        </p>
+                        <p className="truncate text-[10px] text-emerald-500/70">
+                          {t.koreksiHint}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          aria-label={t.koreksiMin}
+                          title={t.koreksiMin}
+                          disabled={adjustBusy !== null}
+                          onClick={() => void handleAdjust(-1)}
+                          className="h-8 w-8 border-emerald-800 bg-emerald-950/60 p-0 text-emerald-300 transition-all hover:scale-105 hover:border-red-500/60 hover:bg-red-950/60 hover:text-red-300 disabled:opacity-40"
+                        >
+                          {adjustBusy === -1 ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Minus className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
+                        <span className="min-w-8 text-center font-mono text-sm font-bold tabular-nums text-emerald-300">
+                          {stats.count}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          aria-label={t.koreksiPlus}
+                          title={t.koreksiPlus}
+                          disabled={adjustBusy !== null}
+                          onClick={() => void handleAdjust(1)}
+                          className="h-8 w-8 border-emerald-800 bg-emerald-950/60 p-0 text-emerald-300 transition-all hover:scale-105 hover:border-emerald-500/60 hover:bg-emerald-900/60 hover:text-emerald-200 disabled:opacity-40"
+                        >
+                          {adjustBusy === 1 ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Plus className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 </motion.div>
               ) : null}
