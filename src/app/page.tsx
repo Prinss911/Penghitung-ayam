@@ -20,6 +20,8 @@ import {
   YAxis,
 } from "recharts";
 import {
+  BellOff,
+  BellRing,
   Bird,
   Camera,
   ChevronRight,
@@ -72,6 +74,7 @@ import {
 import { useAyamDashboard } from "@/components/ayam/use-ayam-dashboard";
 import { VideoFeed } from "@/components/ayam/video-feed";
 import { SettingsDialog } from "@/components/ayam/settings-dialog";
+import { CameraSourceDialog } from "@/components/ayam/camera-source-dialog";
 import { SessionTrendChart } from "@/components/ayam/session-trend-chart";
 import { SessionDetailDialog } from "@/components/ayam/session-detail-dialog";
 import { ThemeToggle } from "@/components/ayam/theme-toggle";
@@ -237,6 +240,51 @@ export default function AyamCounterPage() {
   const prevConnMode = useRef<string>("connecting");
   const [recoveryTick, setRecoveryTick] = useState(0);
 
+  // ----- notifikasi browser (milestone saat tab di background) -----
+  const [notifEnabled, setNotifEnabled] = useState(false);
+  useEffect(() => {
+    try {
+      setNotifEnabled(
+        "Notification" in window &&
+          localStorage.getItem("ayam-notif") === "1" &&
+          Notification.permission === "granted"
+      );
+    } catch {
+      /* abaikan */
+    }
+  }, []);
+
+  const toggleNotif = useCallback(async () => {
+    if (!("Notification" in window)) {
+      toast.error(t.notifTidakDidukung);
+      return;
+    }
+    if (notifEnabled) {
+      setNotifEnabled(false);
+      try {
+        localStorage.setItem("ayam-notif", "0");
+      } catch {}
+      return;
+    }
+    let perm = Notification.permission;
+    if (perm === "default") {
+      try {
+        perm = await Notification.requestPermission();
+      } catch {
+        perm = "denied";
+      }
+    }
+    if (perm === "granted") {
+      setNotifEnabled(true);
+      try {
+        localStorage.setItem("ayam-notif", "1");
+      } catch {}
+      toast.success(t.notifAktif);
+    } else {
+      toast.error(t.notifIzinDitolak);
+    }
+  }, [notifEnabled, t]);
+
   // default tanggal & jam (client only, hindari hydration mismatch)
   useEffect(() => {
     const now = new Date();
@@ -319,9 +367,30 @@ export default function AyamCounterPage() {
         description: `🎯 ${t.milestone}`,
       });
       playBeep();
+      // Notifikasi browser saat tab di background
+      if (
+        notifEnabled &&
+        typeof document !== "undefined" &&
+        document.hidden &&
+        "Notification" in window &&
+        Notification.permission === "granted"
+      ) {
+        try {
+          const n = new Notification(
+            `${t.notifMilestoneTitle} — ${milestoneVal}`,
+            {
+              body: `${milestoneVal} ${t.notifMilestoneBody}`,
+              tag: "ayam-milestone",
+            }
+          );
+          setTimeout(() => n.close(), 6000);
+        } catch {
+          /* abaikan */
+        }
+      }
     }
     lastMilestoneRef.current = Math.max(lastMilestoneRef.current, c);
-  }, [stats.count, t, playBeep]);
+  }, [stats.count, t, playBeep, notifEnabled]);
 
   // ----- actions -----
   const handleStart = useCallback(async () => {
@@ -421,14 +490,17 @@ export default function AyamCounterPage() {
       if (!h.tanggal) continue;
       map.set(h.tanggal, (map.get(h.tanggal) ?? 0) + (h.total_count ?? 0));
     }
-    const now = new Date();
+    // Zero-fill: selalu tampilkan 7 hari terakhir (hari tanpa data = 0)
     const pad = (n: number) => String(n).padStart(2, "0");
-    const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-    if (!map.has(todayStr)) map.set(todayStr, 0);
-    return Array.from(map.entries())
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .slice(-7)
-      .map(([d, total]) => ({ day: d.slice(5), total }));
+    const now = new Date();
+    const days: { day: string; total: number }[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(now.getDate() - i);
+      const key = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      days.push({ day: key.slice(5), total: map.get(key) ?? 0 });
+    }
+    return days;
   }, [history]);
 
   const filteredHistory = useMemo(() => {
@@ -484,6 +556,21 @@ export default function AyamCounterPage() {
           <div className="flex items-center gap-2 sm:gap-3">
             <ConnBadge mode={connMode} t={t} />
             <SettingsDialog t={t} onSaved={refreshDevice} />
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => void toggleNotif()}
+              aria-label={notifEnabled ? t.notifNonaktifkan : t.notifAktifkan}
+              aria-pressed={notifEnabled}
+              title={notifEnabled ? t.notifNonaktifkan : t.notifAktifkan}
+              className={`h-9 w-9 border-zinc-800 bg-zinc-900 transition-colors ${
+                notifEnabled
+                  ? "border-emerald-900 text-emerald-400 hover:bg-zinc-800 hover:text-emerald-300"
+                  : "text-zinc-400 hover:border-emerald-500/50 hover:bg-zinc-800 hover:text-emerald-400"
+              }`}
+            >
+              {notifEnabled ? <BellRing className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
+            </Button>
             <ThemeToggle t={t} />
             {/* Language toggle */}
             <div className="flex overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900 text-xs font-semibold">
@@ -623,17 +710,20 @@ export default function AyamCounterPage() {
                   </CardTitle>
                   <CardDescription className="mt-1">{t.feedDeskripsi}</CardDescription>
                 </div>
-                <Badge
-                  variant="outline"
-                  className={`gap-1.5 px-2.5 py-1 font-semibold ${
-                    sessionActive
-                      ? "border-emerald-900 bg-emerald-950 text-emerald-400"
-                      : "border-zinc-700 bg-zinc-900 text-zinc-400"
-                  }`}
-                >
-                  <LiveDot active={sessionActive} />
-                  {sessionActive ? t.live : t.idle}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <CameraSourceDialog t={t} onSaved={refreshDevice} />
+                  <Badge
+                    variant="outline"
+                    className={`gap-1.5 px-2.5 py-1 font-semibold ${
+                      sessionActive
+                        ? "border-emerald-900 bg-emerald-950 text-emerald-400"
+                        : "border-zinc-700 bg-zinc-900 text-zinc-400"
+                    }`}
+                  >
+                    <LiveDot active={sessionActive} />
+                    {sessionActive ? t.live : t.idle}
+                  </Badge>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="p-0">
@@ -669,6 +759,15 @@ export default function AyamCounterPage() {
                     </span>
                   </span>
                 </div>
+                {device?.camera_error ? (
+                  <div className="flex items-start gap-2 border-t border-red-500/30 bg-red-500/10 px-3 py-2 text-[11px] text-red-300">
+                    <Info className="mt-0.5 h-3 w-3 shrink-0" />
+                    <span className="min-w-0">
+                      <span className="font-semibold">{t.kameraErrorAktif}:{" "}</span>
+                      {device.camera_error}
+                    </span>
+                  </div>
+                ) : null}
               </div>
             </CardContent>
           </Card>
@@ -1194,7 +1293,7 @@ export default function AyamCounterPage() {
                           <TableCell className="font-mono text-xs text-zinc-500">
                             {h.id}
                           </TableCell>
-                          <TableCell className="max-w-40 truncate font-medium">
+                          <TableCell className="max-w-40 truncate font-medium text-zinc-200">
                             <span className="inline-flex items-center gap-1.5">
                               {h.asal_ayam}
                               <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-600 opacity-0 transition-opacity group-hover:opacity-100" />

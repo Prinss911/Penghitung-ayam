@@ -46,10 +46,28 @@ export interface DeviceInfo {
   confidence: number;
   camera_source: string;
   camera_connected: boolean;
+  camera_error?: string | null;
   camera_fps: number;
   camera_resolution: string;
   count_line_x: number;
   zone_width: number;
+}
+
+export interface DemoVideo {
+  path: string;
+  name: string;
+  size_mb: number;
+}
+
+export interface CameraSourceInfo {
+  source: string;
+  is_stream: boolean;
+  is_webcam: boolean;
+  connected: boolean;
+  error?: string | null;
+  fps: number;
+  resolution: string;
+  videos: DemoVideo[];
 }
 
 export interface ExportFile {
@@ -168,6 +186,17 @@ export const ayamApi = {
     ),
 
   getTimeline: () => jsonFetch<TimelineResponse>(bp("/api/timeline")),
+
+  /** Info sumber kamera aktif + daftar video demo */
+  getCameraSource: () => jsonFetch<CameraSourceInfo>(bp("/api/camera-source")),
+
+  /** Ganti sumber kamera saat runtime (RTSP / file video / webcam) */
+  setCameraSource: (source: string) =>
+    jsonFetch<{ status: string; source: string }>(bp("/api/camera-source"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source }),
+    }),
 
   /** Detail satu sesi riwayat */
   getSessionDetail: (id: number) =>
