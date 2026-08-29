@@ -1,0 +1,20 @@
+# Dockerfile.backend — contoh requirements untuk ayam-counter-web.
+# Jika folder backend Anda SUDAH punya requirements.txt, file ini diabaikan.
+# Sesuaikan versi dengan lingkungan yang sudah terbukti jalan.
+
+# --- Web server ---
+flask>=3.0
+flask-cors>=4.0
+flask-socketio>=5.3
+simple-websocket>=1.0     # WebSocket untuk async_mode=threading
+python-dotenv>=1.0
+requests>=2.31
+
+# --- Vision / deteksi ---
+opencv-python-headless>=4.10   # headless: tanpa GUI, cocok untuk server/Docker
+numpy>=1.26,<2.3
+ultralytics>=8.3               # YOLOv8 (menarik torch — pada Dockerfile.backend
+                               # torch CPU sudah di-install lebih dulu)
+
+# --- Export laporan ---
+openpyxl>=3.1

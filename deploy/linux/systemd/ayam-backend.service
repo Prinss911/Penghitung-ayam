@@ -1,0 +1,30 @@
+# =============================================================================
+# ayam-backend.service — Backend Ayam Counter (Flask + YOLOv8, :5000)
+#
+# Template — di-render oleh install.sh (--install-systemd):
+#   @BACKEND_DIR@ → folder source backend (ayam-counter-web)
+#   @USER@        → user pemilik project
+#
+# Prasyarat: venv backend sudah dibuat (install.sh) → @BACKEND_DIR@/.venv
+# =============================================================================
+[Unit]
+Description=Ayam Counter Backend (Flask + YOLOv8 :5000)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=@BACKEND_DIR@
+Environment=PYTHONPATH=@BACKEND_DIR@/app
+Environment=DEVICE=auto
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@BACKEND_DIR@/.venv/bin/python -m app.app
+# Load model YOLO bisa lambat — beri tenggang sebelum dianggap gagal
+TimeoutStartSec=180
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

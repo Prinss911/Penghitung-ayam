@@ -1,0 +1,85 @@
+# =============================================================================
+# Ayam Counter — Docker Compose (dashboard + backend)
+#
+# Pemakaian:
+#   1. (opsional, bila punya source backend) salin Dockerfile backend:
+#        bash deploy/docker/setup-backend.sh /path/ke/ayam-counter-web
+#   2. Dashboard saja  : docker compose up -d web
+#      Dashboard+backend: docker compose --profile full up -d
+#   3. Buka http://localhost:3000
+#
+# Konfigurasi lewat file deploy/docker/.env.docker (salin dari .env.docker.example)
+# atau environment shell: AYAM_BACKEND_DIR, AYAM_WEB_PORT, AYAM_BACKEND_PORT, dst.
+#
+# CATATAN: BACKEND_ORIGIN di-bake ke image web saat build (build args).
+#          Jika backend berjalan di HOST (bukan container), set:
+#          AYAM_BACKEND_ORIGIN=http://host.docker.internal:5000
+#          (Linux: tambahkan extra_hosts: "host.docker.internal:host-gateway")
+# =============================================================================
+
+name: ayam-counter
+
+services:
+  # ------------------------------------------------------------------
+  # Dashboard Next.js (:3000) — proxy /api, /video_feed, /socket.io
+  # ke backend lewat rewrite XTransformPort=5000.
+  # ------------------------------------------------------------------
+  web:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.web
+      args:
+        BACKEND_ORIGIN: ${AYAM_BACKEND_ORIGIN:-http://backend:5000}
+    image: ${AYAM_WEB_IMAGE:-ayam-web:latest}
+    container_name: ayam-web
+    ports:
+      - "${AYAM_WEB_PORT:-3000}:3000"
+    environment:
+      - DATABASE_URL=file:/app/db/custom.db
+      - NODE_ENV=production
+    volumes:
+      # SQLite dashboard + data export — bertahan antar restart
+      - ayam-web-db:/app/db
+    depends_on:
+      backend:
+        condition: service_started
+        # backend bersifat opsional (profile "full") — dashboard tetap hidup
+        # meski backend tidak ikut dinyalakan (UI tampil "Offline")
+        required: false
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3000/ -o /dev/null || bun -e \"fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 5
+
+  # ------------------------------------------------------------------
+  # Backend Flask + YOLOv8 (:5000) — HANYA aktif dengan profile "full".
+  # Butuh folder source backend (ayam-counter-web) yang sudah disiapkan
+  # lewat setup-backend.sh (lihat header file).
+  # ------------------------------------------------------------------
+  backend:
+    profiles: ["full"]
+    build:
+      # Arahkan ke folder source backend (default: sibling folder project web)
+      context: ${AYAM_BACKEND_DIR:-../../ayam-counter-web}
+      dockerfile: Dockerfile.backend
+    image: ${AYAM_BACKEND_IMAGE:-ayam-backend:latest}
+    container_name: ayam-backend
+    ports:
+      - "${AYAM_BACKEND_PORT:-5000}:5000"
+    environment:
+      - DEVICE=${AYAM_DEVICE:-auto}
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # Data backend (db sqlite, video, model .pt, export .xlsx).
+      # Sesuaikan path tujuan dengan struktur folder backend bila berbeda
+      # (lihat config.py pada source backend).
+      - ayam-backend-data:/srv/ayam/data
+      - ${AYAM_BACKEND_MODELS_DIR:-../../ayam-counter-web/models}:/srv/ayam/models:ro
+    restart: unless-stopped
+
+volumes:
+  ayam-web-db:
+  ayam-backend-data:

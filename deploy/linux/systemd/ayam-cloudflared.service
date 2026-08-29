@@ -1,0 +1,32 @@
+# =============================================================================
+# ayam-cloudflared.service — Tunnel publik untuk dashboard (OPSIONAL)
+#
+# MODE QUICK TUNNEL (URL acak *.trycloudflare.com, tanpa akun Cloudflare):
+#   URL berubah SETIAP restart service — cocok untuk demo, bukan produksi.
+#   Cek URL:  journalctl -u ayam-cloudflared | grep -Eo 'https://[a-z0-9-]+\.trycloudflare\.com'
+#
+# MODE NAMED TUNNEL (URL stabil, butuh domain + akun Cloudflare):
+#   cloudflared tunnel login
+#   cloudflared tunnel create ayam-counter
+#   cloudflared tunnel route dns ayam-counter dashboard.example.com
+#   → ganti ExecStart menjadi:
+#     ExecStart=/usr/local/bin/cloudflared tunnel run ayam-counter
+#
+# Install:
+#   sudo cp ayam-cloudflared.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now ayam-cloudflared
+# =============================================================================
+[Unit]
+Description=Ayam Counter — Cloudflare Tunnel (quick tunnel)
+After=network-online.target ayam-web.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/cloudflared tunnel --url http://127.0.0.1:3000 --no-autoupdate
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

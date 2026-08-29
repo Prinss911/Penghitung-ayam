@@ -1,0 +1,75 @@
+# =============================================================================
+# Ayam Counter Backend (Flask + YOLOv8 + SocketIO) — image produksi
+#
+# CONTEXT BUILD = folder source backend (ayam-counter-web), BUKAN folder deploy.
+#
+# Siapkan context (sekali saja) — salin Dockerfile ini + .dockerignore ke
+# folder backend:
+#   bash deploy/docker/setup-backend.sh /path/ke/ayam-counter-web
+#
+# Lalu build:
+#   cd /path/ke/ayam-counter-web
+#   docker build -t ayam-backend .
+#
+# ATAU build langsung tanpa menyalin file (-f boleh di luar context):
+#   docker build -f deploy/docker/Dockerfile.backend /path/ke/ayam-counter-web -t ayam-backend
+#
+# Jalankan:
+#   docker run -d --name ayam-backend \
+#     -p 5000:5000 \
+#     -v ayam-backend-data:/srv/ayam/data \
+#     -e DEVICE=auto \
+#     ayam-backend
+#
+# CATATAN GPU (opsional):
+#   Base image ini pakai torch CPU. Untuk NVIDIA GPU ganti base ke
+#   nvidia/cuda:12.4.1-runtime-ubuntu22.04 + pip install torch dengan CUDA,
+#   lalu jalankan dengan `docker run --gpus all`.
+# =============================================================================
+
+# syntax=docker/dockerfile:1
+
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    DEVICE=auto
+
+# ffmpeg  : decode video RTSP/file untuk OpenCV
+# libgl1  : import cv2 (beberapa build butuh libGL)
+# curl    : healthcheck
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      ffmpeg \
+      libgl1 \
+      libglib2.0-0 \
+      curl \
+      ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /srv/ayam
+
+# Torch CPU duluan agar layer ter-cache dan image tidak menarik versi CUDA
+RUN pip install --no-cache-dir \
+      torch==2.5.1 torchvision==0.20.1 \
+      --index-url https://download.pytorch.org/whl/cpu
+
+# requirements.txt dari source backend:
+#   flask, flask-cors, flask-socketio, simple-websocket, opencv-python-headless,
+#   numpy, ultralytics, openpyxl, python-dotenv, requests, dsb.
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+# `python -m app.app` mengharapkan package `app/` di sys.path
+ENV PYTHONPATH=/srv/ayam/app
+
+EXPOSE 5000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=5 \
+  CMD curl -fsS http://127.0.0.1:5000/api/device || exit 1
+
+CMD ["python", "-m", "app.app"]

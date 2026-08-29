@@ -1,0 +1,34 @@
+# =============================================================================
+# ayam-web.service — Dashboard Ayam Counter (Next.js standalone, :3000)
+#
+# Template — di-render oleh install.sh (--install-systemd):
+#   @WEB_DIR@  → folder project dashboard
+#   @RUNNER@   → path bun (atau node)
+#
+# Manual tanpa install.sh: ganti placeholder lalu
+#   sudo cp ayam-web.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now ayam-web
+# =============================================================================
+[Unit]
+Description=Ayam Counter Dashboard (Next.js :3000)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@WEB_DIR@/.next/standalone
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=HOSTNAME=0.0.0.0
+Environment=NEXT_TELEMETRY_DISABLED=1
+# Bila backend Flask ada di mesin yang sama, default rewrite (127.0.0.1:5000)
+# sudah benar. Origin di-bake saat build — lihat deploy/docker/Dockerfile.web.
+ExecStart=@RUNNER@ @WEB_DIR@/.next/standalone/server.js
+Restart=always
+RestartSec=3
+# Hardening ringan
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

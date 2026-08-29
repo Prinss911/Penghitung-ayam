@@ -41,6 +41,18 @@ const FLASK_PROXY_ROUTES: Array<[string, string]> = [
   ["/socket.io/:path*", "/socket.io/:path*"],
 ];
 
+/**
+ * Origin backend Flask.
+ * - Default (dev/sandbox/native Windows+Linux):  http://127.0.0.1:5000
+ * - Docker compose:                              http://backend:5000
+ *
+ * CATATAN DEPLOY: nilai ini dibaca saat `next build` (standalone men-serialize
+ * config ke required-server-files.json), jadi bila memakai image Docker yang
+ * sudah jadi, set build arg `BACKEND_ORIGIN` — lihat deploy/docker/Dockerfile.web
+ * dan deploy/docker/docker-compose.yml.
+ */
+const BACKEND_ORIGIN = process.env.BACKEND_ORIGIN ?? "http://127.0.0.1:5000";
+
 const nextConfig: NextConfig = {
   output: "standalone",
   /* config options here */
@@ -58,7 +70,7 @@ const nextConfig: NextConfig = {
       beforeFiles: FLASK_PROXY_ROUTES.map(([source, destination]) => ({
         source,
         has: [{ type: "query", key: "XTransformPort", value: "5000" }],
-        destination: `http://127.0.0.1:5000${destination}`,
+        destination: `${BACKEND_ORIGIN}${destination}`,
       })),
       afterFiles: [],
       fallback: [],

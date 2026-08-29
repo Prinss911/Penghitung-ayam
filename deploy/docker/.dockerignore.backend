@@ -1,0 +1,27 @@
+# .dockerignore.backend — salin ke folder backend sebagai ".dockerignore"
+# (dilakukan otomatis oleh setup-backend.sh)
+
+.git
+.venv
+venv
+__pycache__
+**/__pycache__
+*.pyc
+*.pyo
+*.log
+logs
+data
+exports
+download
+models/*.pt
+runs
+.env
+.env.*
+*.db
+*.sqlite
+*.xlsx
+*.pdf
+Dockerfile*
+docker-compose*.yml
+README*
+tests

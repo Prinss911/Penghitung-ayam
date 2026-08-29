@@ -1,0 +1,37 @@
+# .dockerignore untuk build image web (context = root project)
+# Dockerfile terpisah di deploy/docker/Dockerfile.web
+
+# Dependencies & build artifacts
+node_modules
+.next
+out
+bun.lockb
+
+# Data runtime — di-mount sebagai volume, jangan ikut image
+db
+download
+data
+
+# Deployment & tooling (tidak dibutuhkan di dalam image)
+deploy
+tests
+examples
+mini-services
+tool-results
+docs
+
+# Git & logs
+.git
+.gitignore
+*.log
+dev.log
+server.log
+
+# Env lokal — nilai runtime di-set lewat compose/environment
+.env
+.env.local
+.env*.local
+
+# OS noise
+.DS_Store
+Thumbs.db

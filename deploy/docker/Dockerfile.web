@@ -1,0 +1,69 @@
+# =============================================================================
+# Ayam Counter Dashboard (Next.js) — image produksi
+#
+# Build (dari root project /home/z/my-project):
+#   docker build -f deploy/docker/Dockerfile.web -t ayam-web .
+#
+# Build dengan backend di container terpisah (docker compose):
+#   BACKEND_ORIGIN di-bake saat build → compose mengirim build arg otomatis.
+#
+# Jalankan:
+#   docker run -p 3000:3000 -v ayam-db:/app/db -e DATABASE_URL=file:/app/db/custom.db ayam-web
+# =============================================================================
+
+# syntax=docker/dockerfile:1
+
+# ---------- STAGE 1: dependencies ----------
+FROM oven/bun:1 AS deps
+WORKDIR /app
+
+COPY package.json bun.lock ./
+COPY prisma ./prisma
+
+# --frozen-lockfile agar versi dependency identik dengan bun.lock
+RUN bun install --frozen-lockfile
+
+# ---------- STAGE 2: build ----------
+FROM oven/bun:1 AS builder
+WORKDIR /app
+
+# Origin backend Flask DI-BAKE saat build (standalone Next men-serialize config).
+# Default dev/native  : http://127.0.0.1:5000
+# Docker compose      : http://backend:5000  (di-set lewat compose build args)
+ARG BACKEND_ORIGIN=http://127.0.0.1:5000
+ENV BACKEND_ORIGIN=${BACKEND_ORIGIN} \
+    NEXT_TELEMETRY_DISABLED=1
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+RUN bunx prisma generate \
+ && bun run build
+
+# ---------- STAGE 3: runtime ----------
+FROM oven/bun:1-slim AS runner
+WORKDIR /app
+
+ENV NODE_ENV=production \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0 \
+    NEXT_TELEMETRY_DISABLED=1 \
+    DATABASE_URL=file:/app/db/custom.db
+
+RUN addgroup --system --gid 1001 ayam \
+ && adduser --system --uid 1001 ayam \
+ && mkdir -p /app/db /app/data \
+ && chown -R ayam:ayam /app
+
+# `.next/standalone` sudah berisi server.js + node_modules minimal;
+# script `bun run build` project juga sudah menyalin .next/static & public
+# ke dalam standalone, sehingga cukup satu COPY.
+COPY --from=builder --chown=ayam:ayam /app/.next/standalone ./
+
+USER ayam
+
+EXPOSE 3000
+VOLUME ["/app/db"]
+
+# Bun menjalankan server.js standalone Next.js
+CMD ["bun", "server.js"]
