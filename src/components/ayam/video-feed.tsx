@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { RotateCcw, VideoOff } from "lucide-react";
+import { Loader2, RotateCcw, VideoOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 // Cari pola byte dalam buffer (JPEG SOI/EOI)
@@ -168,30 +168,30 @@ export function VideoFeed({
 
       {/* Overlay pergantian sumber (ronde 9): di atas frame lama, di bawah status */}
       {switching && status === "live" ? (
-        <div className="absolute inset-0 z-[5] flex flex-col items-center justify-center gap-3 bg-zinc-950/70 backdrop-blur-[2px]">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-700 border-t-amber-400" />
+        <div className="absolute inset-0 z-[5] flex flex-col items-center justify-center gap-3 bg-background/70 backdrop-blur-[2px]">
+          <Loader2 className="h-8 w-8 animate-spin text-amber-400" />
           <p className="text-xs font-medium text-amber-300">{switchingLabel}</p>
         </div>
       ) : null}
 
       {status === "connecting" ? (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-zinc-950">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-700 border-t-amber-400" />
-          <p className="text-xs text-zinc-500">{connectingText}</p>
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background">
+          <Loader2 className="h-8 w-8 animate-spin text-amber-400" />
+          <p className="text-xs text-muted-foreground">{connectingText}</p>
         </div>
       ) : null}
 
       {status === "error" ? (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-zinc-950 p-6 text-center">
-          <VideoOff className="h-10 w-10 text-zinc-600" />
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background p-6 text-center">
+          <VideoOff className="h-10 w-10 text-muted-foreground" />
           <div>
-            <p className="font-semibold text-zinc-300">{errorTitle}</p>
-            <p className="mt-1 text-xs text-zinc-500">{errorDesc}</p>
+            <p className="font-semibold text-foreground">{errorTitle}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{errorDesc}</p>
           </div>
           <Button
             size="sm"
             variant="outline"
-            className="border-zinc-700 bg-zinc-900 hover:bg-zinc-800"
+            className="border-border bg-card hover:bg-muted"
             onClick={() => {
               setStatus("connecting");
               setNonce((n) => n + 1);

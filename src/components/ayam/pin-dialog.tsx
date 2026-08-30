@@ -119,7 +119,7 @@ export function PinGateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-amber-900/60 bg-zinc-950 text-zinc-100 sm:max-w-sm">
+      <DialogContent className="border-amber-900/60 bg-background text-foreground sm:max-w-sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/15 text-amber-400">
@@ -127,7 +127,7 @@ export function PinGateDialog({
             </span>
             {t.pinGateTitle}
           </DialogTitle>
-          <DialogDescription className="text-zinc-400">
+          <DialogDescription className="text-muted-foreground">
             {t.pinGateDesc}
           </DialogDescription>
         </DialogHeader>
@@ -137,7 +137,7 @@ export function PinGateDialog({
           transition={{ duration: 0.36 }}
           className="space-y-1.5"
         >
-          <Label htmlFor="pin-gate-input" className="text-zinc-400">
+          <Label htmlFor="pin-gate-input" className="text-muted-foreground">
             {t.pinLabel}
           </Label>
           <Input
@@ -159,7 +159,7 @@ export function PinGateDialog({
             aria-invalid={error}
             aria-disabled={lockSecs > 0}
             placeholder="••••"
-            className={`border-zinc-800 bg-zinc-900 text-center font-mono text-xl tracking-[0.5em] text-zinc-100 placeholder:text-zinc-700 focus-visible:ring-amber-500 disabled:cursor-not-allowed disabled:opacity-50 ${
+            className={`border-border bg-card text-center font-mono text-xl tracking-[0.5em] text-foreground placeholder:text-muted-foreground focus-visible:ring-amber-500 disabled:cursor-not-allowed disabled:opacity-50 ${
               error ? "border-red-500/60" : ""
             }`}
           />
@@ -184,7 +184,7 @@ export function PinGateDialog({
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            className="border-zinc-800 bg-transparent text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100"
+            className="border-border bg-transparent text-foreground hover:bg-card hover:text-foreground"
           >
             {t.batalkan}
           </Button>
@@ -300,10 +300,10 @@ export function PinManagerDialog({ t }: { t: Dict }) {
           size="icon"
           aria-label={t.pinKelola}
           title={t.pinKelola}
-          className={`h-9 w-9 border-zinc-800 bg-zinc-900 transition-colors ${
+          className={`h-9 w-9 border-border bg-card transition-colors ${
             status?.enabled
-              ? "border-emerald-900 text-emerald-400 hover:bg-zinc-800 hover:text-emerald-300"
-              : "text-zinc-400 hover:border-amber-500/50 hover:bg-zinc-800 hover:text-amber-400"
+              ? "border-emerald-900 text-emerald-400 hover:bg-muted hover:text-emerald-300"
+              : "text-muted-foreground hover:border-amber-500/50 hover:bg-muted hover:text-amber-400"
           }`}
         >
           {status?.enabled ? (
@@ -313,19 +313,19 @@ export function PinManagerDialog({ t }: { t: Dict }) {
           )}
         </Button>
       </DialogTrigger>
-      <DialogContent className="border-zinc-800 bg-zinc-950 text-zinc-100 sm:max-w-md">
+      <DialogContent className="border-border bg-background text-foreground sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 text-emerald-400" />
             {t.pinProteksi}
           </DialogTitle>
-          <DialogDescription className="text-zinc-400">
+          <DialogDescription className="text-muted-foreground">
             {t.pinProteksiDesc}
           </DialogDescription>
         </DialogHeader>
 
         {/* Status aktif */}
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-900/60 p-3">
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card/60 p-3">
           <div className="min-w-0">
             <p className="flex items-center gap-2 text-sm font-semibold">
               {status ? (
@@ -334,7 +334,7 @@ export function PinManagerDialog({ t }: { t: Dict }) {
                   className={`px-1.5 py-0 text-[10px] font-semibold uppercase ${
                     enabled
                       ? "border-emerald-900 bg-emerald-950 text-emerald-400"
-                      : "border-zinc-700 bg-zinc-900 text-zinc-400"
+                      : "border-border bg-card text-muted-foreground"
                   }`}
                 >
                   {enabled ? t.pinAktif : t.pinNonaktif}
@@ -357,16 +357,16 @@ export function PinManagerDialog({ t }: { t: Dict }) {
           />
         </div>
 
-        <Separator className="bg-zinc-800" />
+        <Separator className="bg-muted" />
 
         {/* Ganti PIN */}
         <div className="space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             {t.pinUbah}
           </p>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="pin-cur" className="text-zinc-400">
+              <Label htmlFor="pin-cur" className="text-muted-foreground">
                 {t.pinSaatIni}
               </Label>
               <Input
@@ -379,11 +379,11 @@ export function PinManagerDialog({ t }: { t: Dict }) {
                   setCurrentPin(e.target.value.replace(/\D/g, "").slice(0, 8))
                 }
                 placeholder="••••"
-                className="border-zinc-800 bg-zinc-900 font-mono tracking-widest text-zinc-100 placeholder:text-zinc-700 focus-visible:ring-amber-500"
+                className="border-border bg-card font-mono tracking-widest text-foreground placeholder:text-muted-foreground focus-visible:ring-amber-500"
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="pin-new" className="text-zinc-400">
+              <Label htmlFor="pin-new" className="text-muted-foreground">
                 {t.pinBaru}
               </Label>
               <Input
@@ -396,7 +396,7 @@ export function PinManagerDialog({ t }: { t: Dict }) {
                   setNewPin(e.target.value.replace(/\D/g, "").slice(0, 8))
                 }
                 placeholder={t.pinBaruPh}
-                className="border-zinc-800 bg-zinc-900 font-mono tracking-widest text-zinc-100 placeholder:font-sans placeholder:tracking-normal placeholder:text-zinc-600 focus-visible:ring-amber-500"
+                className="border-border bg-card font-mono tracking-widest text-foreground placeholder:font-sans placeholder:tracking-normal placeholder:text-muted-foreground focus-visible:ring-amber-500"
               />
             </div>
           </div>
@@ -404,7 +404,7 @@ export function PinManagerDialog({ t }: { t: Dict }) {
             onClick={() => void save({ new_pin: newPin.trim() })}
             disabled={busy || currentPin.length < 4 || newPin.trim().length < 4}
             variant="outline"
-            className="w-full border-zinc-800 bg-zinc-900 text-zinc-200 hover:border-amber-500/50 hover:bg-amber-500 hover:text-zinc-950 disabled:opacity-50"
+            className="w-full border-border bg-card text-foreground hover:border-amber-500/50 hover:bg-amber-500 hover:text-zinc-950 disabled:opacity-50"
           >
             {busy ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -415,7 +415,7 @@ export function PinManagerDialog({ t }: { t: Dict }) {
           </Button>
         </div>
 
-        <p className="text-[11px] leading-relaxed text-zinc-600">
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
           {t.pinKeamananInfo}
         </p>
       </DialogContent>
@@ -424,5 +424,5 @@ export function PinManagerDialog({ t }: { t: Dict }) {
 }
 
 function Skeleton1() {
-  return <span className="inline-block h-5 w-16 animate-pulse rounded bg-zinc-800" />;
+  return <span className="inline-block h-5 w-16 animate-pulse rounded bg-muted" />;
 }

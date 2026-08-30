@@ -93,7 +93,7 @@ const ACTION_META: Record<
   pin_verify_ok: { icon: CheckCircle2, cls: "bg-emerald-500/15 text-emerald-400" },
   pin_verify_fail: { icon: XCircle, cls: "bg-amber-500/15 text-amber-400" },
   pin_locked_out: { icon: TriangleAlert, cls: "bg-red-500/15 text-red-400" },
-  audit_clear: { icon: Trash2, cls: "bg-zinc-500/15 text-zinc-400" },
+  audit_clear: { icon: Trash2, cls: "bg-zinc-500/15 text-muted-foreground" },
   audit_export: { icon: FileDown, cls: "bg-teal-500/15 text-teal-400" },
   target: { icon: TriangleAlert, cls: "bg-orange-500/15 text-orange-400" },
   preset_save: { icon: Save, cls: "bg-sky-500/15 text-sky-400" },
@@ -101,7 +101,7 @@ const ACTION_META: Record<
 };
 
 function actionMeta(action: string) {
-  return ACTION_META[action] ?? { icon: ScrollText, cls: "bg-zinc-500/15 text-zinc-400" };
+  return ACTION_META[action] ?? { icon: ScrollText, cls: "bg-zinc-500/15 text-muted-foreground" };
 }
 
 function actionLabel(action: string, t: Dict): string {
@@ -234,12 +234,12 @@ export function AuditLogDialog({ t, lang }: { t: Dict; lang: "id" | "en" }) {
           size="icon"
           aria-label={t.logAktivitas}
           title={t.logAktivitas}
-          className="h-9 w-9 border-zinc-800 bg-zinc-900 text-zinc-400 transition-colors hover:border-sky-500/50 hover:bg-zinc-800 hover:text-sky-400"
+          className="h-9 w-9 border-border bg-card text-muted-foreground transition-colors hover:border-sky-500/50 hover:bg-muted hover:text-sky-400"
         >
           <ScrollText className="h-4 w-4" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="border-zinc-800 bg-zinc-950 text-zinc-100 sm:max-w-lg">
+      <DialogContent className="border-border bg-background text-foreground sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-500/15 text-sky-400">
@@ -249,7 +249,7 @@ export function AuditLogDialog({ t, lang }: { t: Dict; lang: "id" | "en" }) {
             {!loading ? (
               <Badge
                 variant="outline"
-                className="ml-1 border-zinc-800 px-1.5 py-0 text-[10px] font-semibold text-zinc-500"
+                className="ml-1 border-border px-1.5 py-0 text-[10px] font-semibold text-muted-foreground"
                 title={`${total} ${t.logEntri}`}
               >
                 {total}
@@ -267,12 +267,12 @@ export function AuditLogDialog({ t, lang }: { t: Dict; lang: "id" | "en" }) {
           >
             <SelectTrigger
               aria-label={t.logFilterLabel}
-              className="h-8 min-w-0 flex-1 gap-1 border-zinc-800 bg-zinc-900 text-xs text-zinc-300 hover:bg-zinc-800 focus:ring-sky-500/40 sm:w-[190px] sm:flex-none"
+              className="h-8 min-w-0 flex-1 gap-1 border-border bg-card text-xs text-foreground hover:bg-muted focus:ring-sky-500/40 sm:w-[190px] sm:flex-none"
             >
               <SelectValue placeholder={t.logFilterSemua} />
             </SelectTrigger>
-            <SelectContent className="border-zinc-800 bg-zinc-950 text-zinc-200">
-              <SelectItem value="all" className="text-xs focus:bg-zinc-900">
+            <SelectContent className="border-border bg-background text-foreground">
+              <SelectItem value="all" className="text-xs focus:bg-card">
                 {t.logFilterSemua}
               </SelectItem>
               {actions.map((a) => {
@@ -282,7 +282,7 @@ export function AuditLogDialog({ t, lang }: { t: Dict; lang: "id" | "en" }) {
                   <SelectItem
                     key={a.action}
                     value={a.action}
-                    className="text-xs focus:bg-zinc-900"
+                    className="text-xs focus:bg-card"
                   >
                     <span className="flex items-center gap-2">
                       <span
@@ -291,7 +291,7 @@ export function AuditLogDialog({ t, lang }: { t: Dict; lang: "id" | "en" }) {
                         <Icon className="h-2.5 w-2.5" />
                       </span>
                       {actionLabel(a.action, t)}
-                      <span className="ml-auto font-mono text-[10px] text-zinc-500">
+                      <span className="ml-auto font-mono text-[10px] text-muted-foreground">
                         {a.n}
                       </span>
                     </span>
@@ -309,7 +309,7 @@ export function AuditLogDialog({ t, lang }: { t: Dict; lang: "id" | "en" }) {
               onClick={() => void handleCsv()}
               title={t.logUnduhCsv}
               aria-label={t.logUnduhCsv}
-              className="h-7 gap-1 px-2 text-[11px] text-zinc-400 hover:bg-teal-950/60 hover:text-teal-400 disabled:opacity-40"
+              className="h-7 gap-1 px-2 text-[11px] text-muted-foreground hover:bg-teal-950/60 hover:text-teal-400 disabled:opacity-40"
             >
               {csvBusy ? (
                 <Loader2 className="h-3 w-3 animate-spin" />
@@ -323,7 +323,7 @@ export function AuditLogDialog({ t, lang }: { t: Dict; lang: "id" | "en" }) {
               variant="ghost"
               disabled={loading || entries.length === 0}
               onClick={() => setConfirmClear(true)}
-              className="h-7 gap-1 px-2 text-[11px] text-zinc-500 hover:bg-red-950/50 hover:text-red-400 disabled:opacity-40"
+              className="h-7 gap-1 px-2 text-[11px] text-muted-foreground hover:bg-red-950/50 hover:text-red-400 disabled:opacity-40"
             >
               <Trash2 className="h-3 w-3" />
               {t.logBersihkan}
@@ -336,17 +336,17 @@ export function AuditLogDialog({ t, lang }: { t: Dict; lang: "id" | "en" }) {
             <Loader2 className="h-6 w-6 animate-spin text-sky-400" />
           </div>
         ) : entries.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-800 py-10 text-center">
-            <ScrollText className="h-8 w-8 text-zinc-700" />
-            <p className="text-sm font-medium text-zinc-400">{t.logKosong}</p>
-            <p className="max-w-64 text-xs text-zinc-600">
+          <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border py-10 text-center">
+            <ScrollText className="h-8 w-8 text-muted-foreground" />
+            <p className="text-sm font-medium text-muted-foreground">{t.logKosong}</p>
+            <p className="max-w-64 text-xs text-muted-foreground">
               {filter ? `${t.logFilterLabel}: ${actionLabel(filter, t)}` : t.logKosongDesc}
             </p>
           </div>
         ) : (
           <>
             <div className="ayam-scroll -mr-1 max-h-[55vh] overflow-y-auto pr-1">
-              <ol className="relative space-y-0 border-l border-zinc-800 pl-0">
+              <ol className="relative space-y-0 border-l border-border pl-0">
                 {entries.map((e, idx) => {
                   const meta = actionMeta(e.action);
                   const Icon = meta.icon;
@@ -356,21 +356,21 @@ export function AuditLogDialog({ t, lang }: { t: Dict; lang: "id" | "en" }) {
                       {idx < entries.length - 1 ? (
                         <span
                           aria-hidden
-                          className="absolute left-[15px] top-8 h-[calc(100%-2rem)] w-px bg-zinc-800/80"
+                          className="absolute left-[15px] top-8 h-[calc(100%-2rem)] w-px bg-muted/80"
                         />
                       ) : null}
                       <span
-                        className={`relative z-10 mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ring-4 ring-zinc-950 ${meta.cls}`}
+                        className={`relative z-10 mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ring-4 ring-background ${meta.cls}`}
                       >
                         <Icon className="h-3.5 w-3.5" />
                       </span>
-                      <div className="min-w-0 flex-1 rounded-lg border border-zinc-800/70 bg-zinc-900/40 px-3 py-2 transition-colors hover:border-zinc-700">
+                      <div className="min-w-0 flex-1 rounded-lg border border-border/70 bg-card/40 px-3 py-2 transition-colors hover:border-border">
                         <div className="flex items-center justify-between gap-2">
-                          <p className="truncate text-xs font-semibold text-zinc-200">
+                          <p className="truncate text-xs font-semibold text-foreground">
                             {actionLabel(e.action, t)}
                           </p>
                           <span
-                            className="inline-flex shrink-0 items-center gap-1 font-mono text-[10px] text-zinc-600"
+                            className="inline-flex shrink-0 items-center gap-1 font-mono text-[10px] text-muted-foreground"
                             title={new Date(e.ts).toLocaleString()}
                           >
                             <Clock className="h-2.5 w-2.5" />
@@ -379,7 +379,7 @@ export function AuditLogDialog({ t, lang }: { t: Dict; lang: "id" | "en" }) {
                         </div>
                         {e.detail ? (
                           <p
-                            className="mt-0.5 truncate font-mono text-[11px] text-zinc-500"
+                            className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground"
                             title={e.detail}
                           >
                             {e.detail}
@@ -399,7 +399,7 @@ export function AuditLogDialog({ t, lang }: { t: Dict; lang: "id" | "en" }) {
                     variant="outline"
                     disabled={loadingMore}
                     onClick={() => void loadMore()}
-                    className="h-8 gap-1.5 border-zinc-800 bg-zinc-900 px-4 text-xs text-zinc-300 hover:border-sky-500/50 hover:bg-zinc-800 hover:text-sky-400"
+                    className="h-8 gap-1.5 border-border bg-card px-4 text-xs text-foreground hover:border-sky-500/50 hover:bg-muted hover:text-sky-400"
                   >
                     {loadingMore ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -407,13 +407,13 @@ export function AuditLogDialog({ t, lang }: { t: Dict; lang: "id" | "en" }) {
                       <ChevronDown className="h-3.5 w-3.5" />
                     )}
                     {loadingMore ? t.logMemuat : t.logMuatLagi}
-                    <span className="font-mono text-[10px] text-zinc-500">
+                    <span className="font-mono text-[10px] text-muted-foreground">
                       {entries.length}/{total}
                     </span>
                   </Button>
                 </div>
               ) : (
-                <p className="pt-1 text-center font-mono text-[10px] text-zinc-700">
+                <p className="pt-1 text-center font-mono text-[10px] text-muted-foreground">
                   {entries.length}/{total} {t.logEntri}
                 </p>
               )}
@@ -423,7 +423,7 @@ export function AuditLogDialog({ t, lang }: { t: Dict; lang: "id" | "en" }) {
 
         {/* Konfirmasi bersihkan log */}
         <AlertDialog open={confirmClear} onOpenChange={setConfirmClear}>
-          <AlertDialogContent className="border-zinc-800 bg-zinc-950 text-zinc-100">
+          <AlertDialogContent className="border-border bg-background text-foreground">
             <AlertDialogHeader>
               <AlertDialogTitle className="flex items-center gap-2">
                 <Trash2 className="h-4 w-4 text-red-500" />
@@ -434,7 +434,7 @@ export function AuditLogDialog({ t, lang }: { t: Dict; lang: "id" | "en" }) {
             <AlertDialogFooter>
               <AlertDialogCancel
                 disabled={clearBusy}
-                className="border-zinc-800 bg-transparent text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100"
+                className="border-border bg-transparent text-foreground hover:bg-card hover:text-foreground"
               >
                 {t.batalkan}
               </AlertDialogCancel>
@@ -448,7 +448,7 @@ export function AuditLogDialog({ t, lang }: { t: Dict; lang: "id" | "en" }) {
               >
                 {clearBusy ? (
                   <>
-                    <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     {t.menghapus}
                   </>
                 ) : (

@@ -50,7 +50,7 @@ export function ThemeToggle({ t }: { t: Dict }) {
       aria-label={light ? t.temaGelap : t.temaTerang}
       title={light ? t.temaGelap : t.temaTerang}
       onClick={() => apply(!light)}
-      className="relative h-9 w-9 overflow-hidden border-zinc-800 bg-zinc-900 text-zinc-400 transition-colors hover:border-amber-500/50 hover:bg-zinc-800 hover:text-amber-400 max-sm:h-8 max-sm:w-8"
+      className="relative h-9 w-9 overflow-hidden border-border bg-card text-muted-foreground transition-colors hover:border-amber-500/50 hover:bg-muted hover:text-amber-400 max-sm:h-8 max-sm:w-8"
     >
       {/* ikon cross-fade halus saat berganti tema */}
       <Sun

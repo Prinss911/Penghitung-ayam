@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ayam Counter System - Hybrid</title>
+    <script src="https://cdn.socket.io/4.5.0/socket.io.min.js"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', Arial, sans-serif; 
+            background: #0f0f1a; 
+            color: white; 
+            margin: 0; 
+            padding: 20px; 
+            min-height: 100vh;
+        }
+        .container { 
+            max-width: 1400px; 
+            margin: 0 auto; 
+        }
+        
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 1.8em;
+            background: linear-gradient(135deg, #4ecdc4, #44b39d);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .badge {
+            background: #4ecdc4;
+            color: #0f0f1a;
+            padding: 4px 14px;
+            border-radius: 20px;
+            font-size: 0.7em;
+            font-weight: bold;
+            -webkit-text-fill-color: #0f0f1a;
+        }
+        
+        /* Stats */
+        .stats { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); 
+            gap: 15px; 
+            margin: 20px 0; 
+        }
+        .stat-card { 
+            background: #1a1a2e; 
+            padding: 18px 15px; 
+            border-radius: 12px; 
+            text-align: center;
+            border: 1px solid #2a2a4a;
+            transition: all 0.3s;
+        }
+        .stat-card:hover {
+            border-color: #4ecdc4;
+            transform: translateY(-2px);
+        }
+        .stat-value { 
+            font-size: 2.2em; 
+            font-weight: bold; 
+            color: #4ecdc4; 
+            line-height: 1.2;
+        }
+        .stat-label { 
+            color: #8888aa; 
+            font-size: 0.8em; 
+            margin-top: 5px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .stat-value.speed { color: #ffd93d; }
+        .stat-value.tracks { color: #a29bfe; }
+        .stat-value.status { font-size: 1.2em; }
+        .stat-value.status.active { color: #4ecdc4; }
+        .stat-value.status.inactive { color: #ff6b6b; }
+        
+        /* Video */
+        .video-container { 
+            background: #1a1a2e; 
+            border-radius: 12px; 
+            padding: 10px;
+            border: 1px solid #2a2a4a;
+        }
+        .video-container img { 
+            width: 100%; 
+            border-radius: 8px; 
+            display: block;
+            background: #0a0a15;
+        }
+        
+        /* Controls */
+        .controls { 
+            display: flex; 
+            gap: 12px; 
+            flex-wrap: wrap; 
+            margin: 18px 0; 
+        }
+        .btn { 
+            padding: 12px 30px; 
+            border: none; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            font-size: 1em;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        .btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+        .btn-start { 
+            background: linear-gradient(135deg, #4ecdc4, #44b39d); 
+            color: white; 
+        }
+        .btn-stop { 
+            background: linear-gradient(135deg, #ff6b6b, #ee5a24); 
+            color: white; 
+        }
+        .btn-reset { 
+            background: linear-gradient(135deg, #ffd93d, #f6b93b); 
+            color: #333; 
+        }
+        .btn-export {
+            background: linear-gradient(135deg, #a29bfe, #6c5ce7);
+            color: white;
+        }
+        .btn:disabled { 
+            opacity: 0.4; 
+            cursor: not-allowed;
+            transform: none !important;
+        }
+        
+        /* Form */
+        .form-row { 
+            display: grid; 
+            grid-template-columns: 1fr 1fr; 
+            gap: 15px; 
+            margin: 15px 0;
+            background: #1a1a2e;
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid #2a2a4a;
+        }
+        .form-group { 
+            margin: 0; 
+        }
+        .form-group label { 
+            display: block; 
+            margin-bottom: 5px; 
+            color: #8888aa;
+            font-size: 0.85em;
+            font-weight: 500;
+        }
+        .form-group input { 
+            width: 100%; 
+            padding: 10px 12px; 
+            border-radius: 8px; 
+            border: 1px solid #2a2a4a;
+            background: #0f0f1a;
+            color: white;
+            font-size: 0.95em;
+            transition: border 0.3s;
+        }
+        .form-group input:focus {
+            outline: none;
+            border-color: #4ecdc4;
+        }
+        .form-group input::placeholder {
+            color: #555;
+        }
+        
+        /* Info bar */
+        .info-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 10px 0;
+            padding: 10px 15px;
+            background: #1a1a2e;
+            border-radius: 8px;
+            border: 1px solid #2a2a4a;
+            font-size: 0.85em;
+            color: #8888aa;
+        }
+        .info-bar .method {
+            color: #4ecdc4;
+            font-weight: bold;
+        }
+        .info-bar .fps {
+            color: #ffd93d;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            body { padding: 10px; }
+            .header h1 { font-size: 1.3em; }
+            .stats { grid-template-columns: 1fr 1fr; gap: 10px; }
+            .stat-value { font-size: 1.6em; }
+            .form-row { grid-template-columns: 1fr; }
+            .controls .btn { padding: 10px 20px; font-size: 0.9em; }
+        }
+        @media (max-width: 480px) {
+            .stats { grid-template-columns: 1fr 1fr; }
+            .stat-card { padding: 12px 10px; }
+            .stat-value { font-size: 1.3em; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🐔 Ayam Counter System</h1>
+            <span class="badge">⚡ HYBRID v2.0</span>
+        </div>
+        
+        <!-- Stats -->
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-value" id="totalCount">0</div>
+                <div class="stat-label">Total Terhitung</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value speed" id="avgSpeed">0.00</div>
+                <div class="stat-label">Kecepatan Avg (m/s)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value tracks" id="activeTracks">0</div>
+                <div class="stat-label">Track Aktif</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value status inactive" id="sessionStatus">Inactive</div>
+                <div class="stat-label">Status Session</div>
+            </div>
+        </div>
+        
+        <!-- Video -->
+        <div class="video-container">
+            <img src="{{ url_for('video_feed') }}" id="videoFeed" alt="Video Feed">
+        </div>
+        
+        <!-- Info Bar -->
+        <div class="info-bar">
+            <span>Method: <span class="method">Hybrid</span> (Direct + Tracker)</span>
+            <span>Status: <span id="statusText">Menunggu Start</span></span>
+            <span class="fps" id="fpsDisplay">FPS: 0</span>
+        </div>
+        
+        <!-- Controls -->
+        <div class="controls">
+            <button class="btn btn-start" id="btnStart" onclick="startSession()">▶ Start Counting</button>
+            <button class="btn btn-stop" id="btnStop" onclick="stopSession()" disabled>⏹ Stop</button>
+            <button class="btn btn-reset" onclick="resetCounter()">↻ Reset Counter</button>
+            <button class="btn btn-export" onclick="refreshExports()">📁 Refresh Exports</button>
+        </div>
+        
+        <!-- Form -->
+        <div class="form-row">
+            <div class="form-group">
+                <label>🏷️ Asal Ayam</label>
+                <input type="text" id="asalAyam" placeholder="e.g. Kandang A" value="Kandang 1">
+            </div>
+            <div class="form-group">
+                <label>📅 Tanggal</label>
+                <input type="date" id="tanggal">
+            </div>
+            <div class="form-group">
+                <label>🕐 Jam</label>
+                <input type="time" id="jam">
+            </div>
+            <div class="form-group">
+                <label>📝 Keterangan</label>
+                <input type="text" id="keterangan" placeholder="Optional notes...">
+            </div>
+        </div>
+        
+        <!-- Export List -->
+        <div id="exportList" style="margin-top: 15px; display: none;">
+            <h3 style="color: #8888aa; font-size: 0.9em;">📁 Recent Exports</h3>
+            <div id="exportItems" style="display: flex; flex-wrap: wrap; gap: 10px;"></div>
+        </div>
+    </div>
+    
+    <script>
+        // ============================================
+        // SET DEFAULT DATE/TIME
+        // ============================================
+        document.getElementById('tanggal').value = new Date().toISOString().split('T')[0];
+        document.getElementById('jam').value = new Date().toTimeString().slice(0, 5);
+        
+        // ============================================
+        // SOCKET CONNECTION
+        // ============================================
+        const socket = io();
+        
+        socket.on('connect', function() {
+            console.log('✅ Connected to server');
+            document.getElementById('statusText').textContent = 'Connected';
+        });
+        
+        socket.on('disconnect', function() {
+            console.log('❌ Disconnected from server');
+            document.getElementById('statusText').textContent = 'Disconnected';
+        });
+        
+        // ============================================
+        // UPDATE STATS
+        // ============================================
+        socket.on('update_stats', function(data) {
+            document.getElementById('totalCount').textContent = data.count;
+            document.getElementById('avgSpeed').textContent = data.speed.toFixed(2);
+            document.getElementById('activeTracks').textContent = data.tracks || 0;
+            
+            // Update status text
+            if (data.session_active) {
+                document.getElementById('statusText').textContent = '🟢 Running';
+                document.getElementById('statusText').style.color = '#4ecdc4';
+            } else {
+                document.getElementById('statusText').textContent = '⏸️ Stopped';
+                document.getElementById('statusText').style.color = '#ffd93d';
+            }
+        });
+        
+        // ============================================
+        // PROCESSING STATUS
+        // ============================================
+        socket.on('processing_status', function(data) {
+            if (data.status === 'running') {
+                document.getElementById('btnStart').disabled = true;
+                document.getElementById('btnStop').disabled = false;
+                document.getElementById('sessionStatus').textContent = '🟢 Active';
+                document.getElementById('sessionStatus').className = 'stat-value status active';
+                document.getElementById('statusText').textContent = '🟢 Running';
+                document.getElementById('statusText').style.color = '#4ecdc4';
+            } else {
+                document.getElementById('btnStart').disabled = false;
+                document.getElementById('btnStop').disabled = true;
+                document.getElementById('sessionStatus').textContent = '⏹️ Inactive';
+                document.getElementById('sessionStatus').className = 'stat-value status inactive';
+                document.getElementById('statusText').textContent = '⏸️ Stopped';
+                document.getElementById('statusText').style.color = '#ffd93d';
+            }
+        });
+        
+        // ============================================
+        // FILE SAVED
+        // ============================================
+        socket.on('file_saved', function(data) {
+            alert('✅ File saved successfully!\n📁 ' + data.file);
+            refreshExports();
+        });
+        
+        // ============================================
+        // COUNTER RESET
+        // ============================================
+        socket.on('counter_reset', function(data) {
+            document.getElementById('totalCount').textContent = '0';
+            document.getElementById('activeTracks').textContent = '0';
+            document.getElementById('avgSpeed').textContent = '0.00';
+        });
+        
+        // ============================================
+        // FUNCTIONS
+        // ============================================
+        function startSession() {
+            const data = {
+                asal_ayam: document.getElementById('asalAyam').value || 'Unknown',
+                tanggal: document.getElementById('tanggal').value,
+                jam: document.getElementById('jam').value,
+                keterangan: document.getElementById('keterangan').value
+            };
+            
+            if (!data.asal_ayam) {
+                alert('⚠️ Mohon isi Asal Ayam terlebih dahulu!');
+                document.getElementById('asalAyam').focus();
+                return;
+            }
+            
+            console.log('🚀 Starting session:', data);
+            socket.emit('start_processing', data);
+        }
+        
+        function stopSession() {
+            if (confirm('⏹️ Stop counting session?')) {
+                console.log('⏹️ Stopping session...');
+                socket.emit('stop_processing');
+            }
+        }
+        
+        function resetCounter() {
+            if (confirm('🔄 Reset counter? (Semua data akan direset)')) {
+                console.log('🔄 Resetting counter...');
+                socket.emit('reset_counter');
+            }
+        }
+        
+        function refreshExports() {
+            console.log('📁 Refreshing exports...');
+            fetch('/api/exports')
+                .then(res => res.json())
+                .then(files => {
+                    const container = document.getElementById('exportItems');
+                    const list = document.getElementById('exportList');
+                    
+                    if (files.length === 0) {
+                        list.style.display = 'none';
+                        return;
+                    }
+                    
+                    list.style.display = 'block';
+                    container.innerHTML = '';
+                    
+                    files.slice(0, 5).forEach(file => {
+                        const size = (file.size / 1024).toFixed(1);
+                        const date = new Date(file.modified * 1000).toLocaleString();
+                        
+                        const div = document.createElement('div');
+                        div.style.cssText = `
+                            background: #1a1a2e;
+                            padding: 10px 15px;
+                            border-radius: 8px;
+                            border: 1px solid #2a2a4a;
+                            display: flex;
+                            align-items: center;
+                            gap: 12px;
+                            flex-wrap: wrap;
+                        `;
+                        div.innerHTML = `
+                            <span style="color: #4ecdc4;">📊</span>
+                            <span style="flex:1; font-size: 0.85em;">${file.name}</span>
+                            <span style="color: #8888aa; font-size: 0.75em;">${size} KB</span>
+                            <a href="/api/download/${file.name}" 
+                               style="color: #4ecdc4; text-decoration: none; font-size: 0.8em;"
+                               target="_blank">⬇️ Download</a>
+                        `;
+                        container.appendChild(div);
+                    });
+                })
+                .catch(err => console.error('Error fetching exports:', err));
+        }
+        
+        // ============================================
+        // AUTO REFRESH EXPORTS
+        // ============================================
+        refreshExports();
+        setInterval(refreshExports, 30000);
+        
+        // ============================================
+        // KEYBOARD SHORTCUTS
+        // ============================================
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && document.activeElement.tagName !== 'INPUT') {
+                if (!document.getElementById('btnStart').disabled) {
+                    startSession();
+                }
+            }
+            if (e.key === 's' && !e.ctrlKey && !e.metaKey) {
+                e.preventDefault();
+                if (!document.getElementById('btnStop').disabled) {
+                    stopSession();
+                }
+            }
+            if (e.key === 'r' && !e.ctrlKey && !e.metaKey) {
+                e.preventDefault();
+                resetCounter();
+            }
+        });
+        
+        console.log('🐔 Ayam Counter System Ready!');
+        console.log('📌 Shortcuts: Enter=Start, S=Stop, R=Reset');
+    </script>
+</body>
+</html>

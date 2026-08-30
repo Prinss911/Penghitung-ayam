@@ -36,7 +36,7 @@ export function SessionTrendChart({ points, total, active, t }: SessionTrendChar
         : [];
 
   return (
-    <Card className="border-zinc-800 bg-zinc-900/60">
+    <Card className="border-border bg-card/60">
       <CardHeader className="pb-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
@@ -56,10 +56,10 @@ export function SessionTrendChart({ points, total, active, t }: SessionTrendChar
       </CardHeader>
       <CardContent>
         {chartData.length === 0 ? (
-          <div className="flex h-44 flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-zinc-800 text-center">
-            <Activity className="h-6 w-6 text-zinc-700" />
-            <p className="text-sm font-medium text-zinc-400">{t.belumAdaTren}</p>
-            <p className="text-xs text-zinc-600">{t.belumAdaTrenDesc}</p>
+          <div className="flex h-44 flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-border text-center">
+            <Activity className="h-6 w-6 text-muted-foreground" />
+            <p className="text-sm font-medium text-muted-foreground">{t.belumAdaTren}</p>
+            <p className="text-xs text-muted-foreground">{t.belumAdaTrenDesc}</p>
           </div>
         ) : (
           <div className="h-44 w-full">

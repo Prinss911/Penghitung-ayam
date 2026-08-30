@@ -101,12 +101,12 @@ export function SettingsDialog({ t, onSaved }: SettingsDialogProps) {
           size="icon"
           aria-label={t.bukaPengaturan}
           title={t.bukaPengaturan}
-          className="h-9 w-9 border-zinc-800 bg-zinc-900 text-zinc-400 hover:border-amber-500/50 hover:bg-zinc-800 hover:text-amber-400"
+          className="h-9 w-9 border-border bg-card text-muted-foreground hover:border-amber-500/50 hover:bg-muted hover:text-amber-400"
         >
           <Settings2 className="h-4 w-4" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="border-zinc-800 bg-zinc-950 text-zinc-100 sm:max-w-md">
+      <DialogContent className="border-border bg-background text-foreground sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Settings2 className="h-4 w-4 text-amber-400" />
@@ -124,7 +124,7 @@ export function SettingsDialog({ t, onSaved }: SettingsDialogProps) {
             {/* Confidence */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-zinc-300">
+                <label className="text-sm font-medium text-foreground">
                   {t.confidenceLabel}
                 </label>
                 <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 font-mono text-xs font-bold text-amber-400 tabular-nums">
@@ -137,10 +137,10 @@ export function SettingsDialog({ t, onSaved }: SettingsDialogProps) {
                 max={95}
                 step={5}
                 onValueChange={(v) => setConf((v[0] ?? 25) / 100)}
-                className="[&_[role=slider]]:border-amber-400 [&_[role=slider]]:bg-zinc-950"
+                className="[&_[role=slider]]:border-amber-400 [&_[role=slider]]:bg-background"
                 aria-label={t.confidenceLabel}
               />
-              <p className="text-[11px] leading-relaxed text-zinc-500">
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
                 {t.hintConfidence}
               </p>
             </div>
@@ -148,7 +148,7 @@ export function SettingsDialog({ t, onSaved }: SettingsDialogProps) {
             {/* Count line X */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-zinc-300">
+                <label className="text-sm font-medium text-foreground">
                   {t.countLineLabel}
                 </label>
                 <span className="rounded-md border border-red-500/30 bg-red-500/10 px-2 py-0.5 font-mono text-xs font-bold text-red-400 tabular-nums">
@@ -161,10 +161,10 @@ export function SettingsDialog({ t, onSaved }: SettingsDialogProps) {
                 max={480}
                 step={2}
                 onValueChange={(v) => setLineX(v[0] ?? 112)}
-                className="[&_[role=slider]]:border-red-400 [&_[role=slider]]:bg-zinc-950"
+                className="[&_[role=slider]]:border-red-400 [&_[role=slider]]:bg-background"
                 aria-label={t.countLineLabel}
               />
-              <p className="text-[11px] leading-relaxed text-zinc-500">
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
                 {t.hintCountLine}
               </p>
             </div>
@@ -172,7 +172,7 @@ export function SettingsDialog({ t, onSaved }: SettingsDialogProps) {
             {/* Zone width */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-zinc-300">
+                <label className="text-sm font-medium text-foreground">
                   {t.zoneLabel}
                 </label>
                 <span className="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-2 py-0.5 font-mono text-xs font-bold text-yellow-400 tabular-nums">
@@ -185,10 +185,10 @@ export function SettingsDialog({ t, onSaved }: SettingsDialogProps) {
                 max={300}
                 step={5}
                 onValueChange={(v) => setZone(v[0] ?? 100)}
-                className="[&_[role=slider]]:border-yellow-400 [&_[role=slider]]:bg-zinc-950"
+                className="[&_[role=slider]]:border-yellow-400 [&_[role=slider]]:bg-background"
                 aria-label={t.zoneLabel}
               />
-              <p className="text-[11px] leading-relaxed text-zinc-500">
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
                 {t.hintZone}
               </p>
             </div>
@@ -206,7 +206,7 @@ export function SettingsDialog({ t, onSaved }: SettingsDialogProps) {
           <Button
             variant="outline"
             onClick={() => setOpen(false)}
-            className="border-zinc-800 bg-transparent text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100"
+            className="border-border bg-transparent text-foreground hover:bg-card hover:text-foreground"
           >
             Cancel
           </Button>
@@ -221,7 +221,7 @@ export function SettingsDialog({ t, onSaved }: SettingsDialogProps) {
                 {t.menyimpan}
               </>
             ) : (
-              t.simpan
+              t.simpanPengaturan
             )}
           </Button>
         </DialogFooter>

@@ -56,9 +56,19 @@ const BACKEND_ORIGIN = process.env.BACKEND_ORIGIN ?? "http://127.0.0.1:5000";
 const nextConfig: NextConfig = {
   output: "standalone",
   /* config options here */
+  // FIX: pin root workspace eksplisit. Dulunya Turbopack bisa salah mendeteksi
+  // root (naik ke C:\Users\<user> yang punya package-lock lain) → worker
+  // PostCSS/Tailwind gagal resolve binding native @tailwindcss/oxide-win32-x64-msvc
+  // → build gagal di globals.css. Dipertahankan sebagai pengaman.
+  turbopack: {
+    root: __dirname,
+  },
   typescript: {
     ignoreBuildErrors: true,
   },
+  // Paket native (napi-rs) dieksekusi apa adanya, tidak dibundel worker,
+  // agar require dinamis binding platform tidak putus di dalam sandbox.
+  serverExternalPackages: ["@tailwindcss/postcss", "@tailwindcss/oxide"],
   reactStrictMode: false,
   // FIX: tanpa ini Next.js me-redirect 308 `/socket.io/` → `/socket.io`
   // (tanpa trailing slash) SEBELUM rewrite jalan → Flask-SocketIO balas 404

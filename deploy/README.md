@@ -109,7 +109,7 @@ Panduan lengkap: **[`deploy/windows/README.md`](windows/README.md)**
 
 Yang dilakukan script Windows otomatis:
 - venv Python + `pip install` backend (sekali, ada marker `.deps-ok`)
-- `bun/npm install` dashboard (sekali)
+- `npm ci` dependency dashboard dari `package-lock.json` (sekali)
 - `next build` + assemble folder `standalone` (Windows tidak punya `cp` →
   disalin via PowerShell) + jalankan `server.js`
 - **Unduh cloudflared otomatis** (`%LOCALAPPDATA%\AyamCounter\cloudflared.exe`)

@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ayam Counter Web - Live Detection</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        header {
+            background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        h1 { margin: 0; font-size: 2.5em; }
+        .subtitle { opacity: 0.9; margin-top: 5px; }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+            padding: 20px;
+        }
+        .video-container {
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            position: relative;
+        }
+        #webcam-video {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        .stats-panel {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            border: 1px solid #dee2e6;
+        }
+        .stat-box {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            border-left: 4px solid #3498db;
+        }
+        .stat-label { font-size: 0.9em; color: #666; margin-bottom: 5px; }
+        .stat-value { font-size: 1.8em; font-weight: bold; color: #2c3e50; }
+        .hardware-info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 15px 0;
+            border: 1px solid #bbdefb;
+        }
+        .hardware-title { font-weight: bold; color: #1565c0; margin-bottom: 10px; }
+        
+        button {
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1.1em;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(52,152,219,0.4);
+        }
+        button:active { transform: translateY(0); }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-ok { background: #2ecc71; }
+        .status-warning { background: #f39c12; }
+        .status-error { background: #e74c3c; }
+        
+        footer {
+            text-align: center;
+            padding: 15px;
+            background: #f8f9fa;
+            color: #666;
+            border-top: 1px solid #dee2e6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🐔 Ayam Counter Web</h1>
+            <div class="subtitle">Real-time Chicken Detection & Counting System</div>
+        </header>
+        
+        <div class="main-content">
+            <!-- Left Side: Video Feed -->
+            <div>
+                <div class="video-container">
+                    <!-- Video stream from Flask server -->
+                    <img id="webcam-video" src="/video_feed" alt="Live Webcam Feed" style="width: 100%; height: auto;">
+                    <div id="no-cam-warning" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; text-align: center; display: none;">
+                        <h3>No Camera Signal</h3>
+                        <p>Please check your camera connection</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Right Side: Statistics -->
+            <div>
+                <div class="hardware-info">
+                    <div class="hardware-title">🖥️ Hardware Profile</div>
+                    <div><strong>Backend:</strong> <span id="backend-info">CUDA (RTX 3060 Ti)</span></div>
+                    <div><strong>VRAM:</strong> 8.6 GB</div>
+                    <div><strong>Precision:</strong> FP16</div>
+                    <div><strong>Status:</strong> <span class="status-indicator status-ok"></span>Active</div>
+                </div>
+                
+                <div class="stats-panel">
+                    <h2 style="margin-top: 0;">📊 Live Statistics</h2>
+                    
+                    <div class="stat-box">
+                        <div class="stat-label">Chickens Detected</div>
+                        <div class="stat-value" id="chicken-count">-</div>
+                    </div>
+                    
+                    <div class="stat-box">
+                        <div class="stat-label">Empty Shackles</div>
+                        <div class="stat-value" id="empty-count">-</div>
+                    </div>
+                    
+                    <div class="stat-box">
+                        <div class="stat-label">Frame Rate</div>
+                        <div class="stat-value" id="fps-counter">--</div>
+                    </div>
+                    
+                    <div class="stat-box">
+                        <div class="stat-label">Total Processing Time</div>
+                        <div class="stat-value" id="total-time">0s</div>
+                    </div>
+                    
+                    <div class="stat-box">
+                        <div class="stat-label">System Status</div>
+                        <div class="stat-value">
+                            <span class="status-indicator status-ok"></span>
+                            Running
+                        </div>
+                    </div>
+                    
+                    <button id="export-btn" onclick="exportToExcel()">
+                        📄 Export to Excel
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <footer>
+            <p>Ayam Counter Web v2.0.0 | Built with YOLO8 + CUDA Acceleration</p>
+        </footer>
+    </div>
+    
+    <script>
+        let statsInterval;
+        let apiUpdateInterval;
+        
+        const webcamVideo = document.getElementById('webcam-video');
+        const chickenCountEl = document.getElementById('chicken-count');
+        const emptyCountEl = document.getElementById('empty-count');
+        const fpsEl = document.getElementById('fps-counter');
+        const totalTimeEl = document.getElementById('total-time');
+        const warningEl = document.getElementById('no-cam-warning');
+        
+        // Check if video is loading (blank image)
+        function checkVideoLoad() {
+            const img = new Image();
+            img.src = '/video_feed';
+            img.onload = function() {
+                console.log('✓ Video feed loaded successfully');
+                warningEl.style.display = 'none';
+            };
+            img.onerror = function() {
+                console.warn('⚠ Video feed not available');
+                warningEl.style.display = 'block';
+            };
+        }
+        
+        // Update live statistics from API
+        async function fetchLiveStats() {
+            try {
+                const response = await fetch('/api/stats');
+                const data = await response.json();
+                
+                // Update counts
+                chickenCountEl.textContent = data.count || 0;
+                
+                // FPS estimation from current count changes
+                if (!isNaN(data.speed)) {
+                    fpsEl.textContent = Math.round(data.speed);
+                } else {
+                    fpsEl.textContent = '--';
+                }
+                
+                console.log('API Stats:', data);
+            } catch (error) {
+                console.error('Error fetching stats:', error);
+            }
+        }
+        
+        // Get Excel files for export
+        async function getExcelFiles() {
+            try {
+                const response = await fetch('/api/exports');
+                const files = await response.json();
+                
+                const select = document.getElementById('export-select');
+                if (!select) return;
+                
+                select.innerHTML = '<option value="">Select file...</option>';
+                files.forEach(file => {
+                    const option = document.createElement('option');
+                    option.value = file.name;
+                    option.textContent = file.name + ` (${file.size_kb} KB)`;
+                    select.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Error loading exports:', error);
+            }
+        }
+        
+        // Start stats updates
+        statsInterval = setInterval(() => {
+            // Simple animation
+            let totalSeconds = parseInt(totalTimeEl.textContent) || 0;
+            totalTimeEl.textContent = totalSeconds + 1 + 's';
+            
+            // Show warning if no video
+            const img = document.getElementById('webcam-video');
+            if (img && img.src === window.location.href + '/video_feed') {
+                setTimeout(checkVideoLoad, 1000);
+            }
+        }, 1000);
+        
+        // Fetch live stats every 2 seconds
+        apiUpdateInterval = setInterval(fetchLiveStats, 2000);
+        
+        // Load Excel files
+        getExcelFiles();
+        
+        // Initialize on page load
+        window.addEventListener('load', () => {
+            console.log('Ayam Counter Web initialized!');
+            console.log('Hardware: RTX 3060 Ti with CUDA acceleration');
+            console.log('Status: Ready to detect chickens');
+            
+            // Try to load video feed
+            setTimeout(checkVideoLoad, 500);
+        });
+        
+        // Clean up on page unload
+        window.addEventListener('unload', () => {
+            clearInterval(statsInterval);
+            clearInterval(apiUpdateInterval);
+        });
+    </script>
+</body>
+</html>

@@ -52,3 +52,28 @@ prompt
 server.log
 # Skills directory
 /skills/
+
+# ===== runtime / agent artifacts (Ayam Counter) =====
+.omo/
+.run/
+logs/
+tunnel-url.txt
+validate.err
+validate.out
+run-*.cmd
+*.pid
+
+# ===== backend (ayam-counter-web) =====
+ayam-counter-web/.venv/
+ayam-counter-web/exports/
+ayam-counter-web/uploads/
+ayam-counter-web/logs/
+ayam-counter-web/hasil_deteksi/
+ayam-counter-web/*.db
+ayam-counter-web/video_*.mp4
+ayam-counter-web/yolov8n.pt
+**/__pycache__/
+*.pyc
+
+# bolehkan example env
+!.env.example

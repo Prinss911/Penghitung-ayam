@@ -86,6 +86,7 @@ export const dict = {
     statistikDetail: "Statistik detail deteksi frame terakhir",
     bingkai: "Bingkai",
     sumberKamera: "Sumber",
+    kameraRtsp: "RTSP CCTV Dahua",
     fileVideo: "File video (loop)",
     // Settings dialog
     pengaturan: "Pengaturan Deteksi",
@@ -93,7 +94,7 @@ export const dict = {
     confidenceLabel: "Confidence Threshold",
     countLineLabel: "Posisi Garis Hitung (px)",
     zoneLabel: "Lebar Zona Deteksi (px)",
-    simpan: "Terapkan",
+    simpanPengaturan: "Terapkan",
     menyimpan: "Menyimpan...",
     pengaturanTersimpan: "Pengaturan diterapkan & disimpan",
     gagalSimpan: "Gagal menyimpan pengaturan",
@@ -400,6 +401,7 @@ export const dict = {
     statistikDetail: "Detailed stats of the last detected frame",
     bingkai: "Frame",
     sumberKamera: "Source",
+    kameraRtsp: "Dahua RTSP CCTV",
     fileVideo: "Video file (loop)",
     // Settings dialog
     pengaturan: "Detection Settings",
@@ -407,7 +409,7 @@ export const dict = {
     confidenceLabel: "Confidence Threshold",
     countLineLabel: "Count Line Position (px)",
     zoneLabel: "Detection Zone Width (px)",
-    simpan: "Apply",
+    simpanPengaturan: "Apply",
     menyimpan: "Saving...",
     pengaturanTersimpan: "Settings applied & saved",
     gagalSimpan: "Failed to save settings",
@@ -644,4 +646,6 @@ export const dict = {
   },
 } as const;
 
-export type Dict = typeof dict.id;
+// Dict dipetakan ke string biasa (bukan literal type) agar union dict[lang]
+// (id | en) dapat dipakai untuk prop bertipe Dict tanpa error TS2322.
+export type Dict = { [K in keyof typeof dict.id]: string };

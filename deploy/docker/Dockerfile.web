@@ -14,18 +14,25 @@
 # syntax=docker/dockerfile:1
 
 # ---------- STAGE 1: dependencies ----------
-FROM oven/bun:1 AS deps
+FROM node:22-alpine AS deps
 WORKDIR /app
 
-COPY package.json bun.lock ./
+# libc6-compat: dibutuhkan native binding (SWC/oxide) di atas musl/Alpine.
+RUN apk add --no-cache libc6-compat
+
+COPY package.json package-lock.json ./
+COPY patches ./patches
 COPY prisma ./prisma
 
-# --frozen-lockfile agar versi dependency identik dengan bun.lock
-RUN bun install --frozen-lockfile
+# npm ci → versi dependency identik dengan package-lock.json.
+# Postinstall menjalankan patch-package (patch @tailwindcss/oxide).
+RUN npm ci
 
 # ---------- STAGE 2: build ----------
-FROM oven/bun:1 AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
+
+RUN apk add --no-cache libc6-compat
 
 # Origin backend Flask DI-BAKE saat build (standalone Next men-serialize config).
 # Default dev/native  : http://127.0.0.1:5000
@@ -37,11 +44,11 @@ ENV BACKEND_ORIGIN=${BACKEND_ORIGIN} \
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-RUN bunx prisma generate \
- && bun run build
+RUN npx prisma generate \
+ && npm run build
 
 # ---------- STAGE 3: runtime ----------
-FROM oven/bun:1-slim AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production \
@@ -56,7 +63,7 @@ RUN addgroup --system --gid 1001 ayam \
  && chown -R ayam:ayam /app
 
 # `.next/standalone` sudah berisi server.js + node_modules minimal;
-# script `bun run build` project juga sudah menyalin .next/static & public
+# script `npm run build` project juga sudah menyalin .next/static & public
 # ke dalam standalone, sehingga cukup satu COPY.
 COPY --from=builder --chown=ayam:ayam /app/.next/standalone ./
 
@@ -65,5 +72,5 @@ USER ayam
 EXPOSE 3000
 VOLUME ["/app/db"]
 
-# Bun menjalankan server.js standalone Next.js
-CMD ["bun", "server.js"]
+# Node menjalankan server.js standalone Next.js
+CMD ["node", "server.js"]

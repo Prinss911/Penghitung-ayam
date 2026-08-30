@@ -48,7 +48,8 @@ services:
         required: false
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3000/ -o /dev/null || bun -e \"fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      # node:22-alpine tidak punya curl/bun — pakai fetch bawaan Node 22.
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 30s
       timeout: 10s
       start_period: 40s

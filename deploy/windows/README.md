@@ -10,7 +10,7 @@ disimpan, dan di-copy ke clipboard.
 
 | Komponen | Cara install | Cek |
 |---|---|---|
-| **Node.js 20+** atau **bun** | https://nodejs.org atau `powershell -c "irm bun.sh/install.ps1 \| iex"` | `node -v` / `bun -v` |
+| **Node.js 20+** (sudah termasuk npm) | https://nodejs.org | `node -v` |
 | **Python 3.10+** | https://python.org — **centang "Add python.exe to PATH"** saat install | `python --version` |
 | cloudflared | **Tidak perlu install manual** — script mengunduh otomatis | — |
 
@@ -98,6 +98,8 @@ powershell -ExecutionPolicy Bypass -File deploy\windows\scripts\Start-Ayam.ps1 `
 |---|---|
 | Dashboard tampil **Offline** | Backend belum siap — buka `http://localhost:5000/api/device` langsung; lihat `logs\backend.err.log` |
 | `pip install` gagal | Koneksi internet; jalankan ulang `start-ayam.bat` (marker `.deps-ok` belum dibuat) |
+| `next build` gagal: **Cannot find native binding** (`@tailwindcss/oxide`) | Patch lokal di `patches/` belum teraplikasi. Jalankan `npx patch-package` di root project (otomatis via `postinstall` saat install). Detail: lihat README root bagian *Catatan Build & Patch* |
+| Warning `patch-package detected a patch file version mismatch` saat install | Hanya muncul bila versi `@tailwindcss/oxide` berubah (mis. upgrade manual). Selama install via `npm ci` dari `package-lock.json` (versi 4.3.3, cocok eksak dengan patch), warning ini tidak muncul |
 | Port 3000/5000 terpakai | Matikan pemakai lama via `stop-ayam.bat`, atau ganti `-Port` |
 | URL tunnel tidak muncul | Lihat `logs\cloudflared.err.log`; firewall/antivirus kadang blokir cloudflared → allowlist |
 | `running scripts is disabled` | Selalu jalankan via `.bat` (sudah memakai `-ExecutionPolicy Bypass`) |

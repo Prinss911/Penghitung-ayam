@@ -29,7 +29,7 @@ export const metadata: Metadata = {
     "real-time detection",
   ],
   icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    icon: "/logo.svg",
   },
 };
 
@@ -53,10 +53,12 @@ export default function RootLayout({
             nilai LIGHT → judul kartu near-black di atas kartu gelap, body
             putih, tooltip/popover putih.
             Ronde 9: class bersifat EKSKLUSIF (dark ATAU light) — bersihkan
-            class lawan agar tak pernah "dark light" sekaligus. */}
+            class lawan agar tak pernah "dark light" sekaligus.
+            Ronde 10: init juga atribut lang dari localStorage ("ayam-lang")
+            agar pengguna EN tidak mendapat lang="id" sebelum hydrate. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var l=localStorage.getItem('ayam-theme')==='light';var c=document.documentElement.classList;if(l){c.add('light');c.remove('dark')}else{c.add('dark');c.remove('light')}}catch(e){document.documentElement.classList.add('dark')}`,
+            __html: `try{var l=localStorage.getItem('ayam-theme')==='light';var c=document.documentElement.classList;if(l){c.add('light');c.remove('dark')}else{c.add('dark');c.remove('light')}var g=localStorage.getItem('ayam-lang');document.documentElement.lang=g==='en'?'en':'id'}catch(e){document.documentElement.classList.add('dark');document.documentElement.lang='id'}`,
           }}
         />
       </head>

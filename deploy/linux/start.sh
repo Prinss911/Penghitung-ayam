@@ -18,7 +18,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WEB_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 LOG_DIR="$WEB_DIR/logs"
-RUNNER="$(command -v bun || command -v node || true)"
+RUNNER="$(command -v node || command -v bun || true)"
 
 WEB_PORT=3000
 BACKEND_PORT=5000
@@ -87,7 +87,7 @@ fi
 # ---------------------------------------------------------------------------
 # 2. Dashboard Next.js (:3000)
 # ---------------------------------------------------------------------------
-[[ -n "$RUNNER" ]] || die "bun/node tidak ditemukan"
+[[ -n "$RUNNER" ]] || die "node/bun tidak ditemukan — install Node.js dulu"
 
 if port_open "$WEB_PORT" "/"; then
   ok "Dashboard sudah jalan di :$WEB_PORT — tidak di-start ulang"

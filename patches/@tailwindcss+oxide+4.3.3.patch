@@ -1,0 +1,28 @@
+diff --git a/node_modules/@tailwindcss/oxide/index.js b/node_modules/@tailwindcss/oxide/index.js
+index 4b0b441..2ae7565 100644
+--- a/node_modules/@tailwindcss/oxide/index.js
++++ b/node_modules/@tailwindcss/oxide/index.js
+@@ -61,6 +61,23 @@ const isMuslFromChildProcess = () => {
+ }
+ 
+ function requireNative() {
++  // PATCH (jembatan validasi, bukan upstream): load binding platform via
++  // path ABSOLUT. require('@tailwindcss/oxide-win32-x64-msvc') dinamis
++  // gagal di dalam worker postcss Turbopack (resolusi specifier di-hook),
++  // sedangkan require(file .node absolut) tidak butuh resolusi node_modules.
++  if (process.platform === 'win32' && process.arch === 'x64') {
++    try {
++      return require(require('path').join(
++        __dirname,
++        '..',
++        'oxide-win32-x64-msvc',
++        'tailwindcss-oxide.win32-x64-msvc.node'
++      ))
++    } catch (e) {
++      loadErrors.push(e)
++    }
++  }
++
+   if (process.env.NAPI_RS_NATIVE_LIBRARY_PATH) {
+     try {
+       return require(process.env.NAPI_RS_NATIVE_LIBRARY_PATH);

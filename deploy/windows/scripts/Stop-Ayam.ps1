@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
   Hentikan semua komponen Ayam Counter di Windows:
@@ -45,9 +45,33 @@ function Stop-PortListener([int]$port, [string]$label) {
   foreach ($c in $conns) {
     $p = Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue
     if ($p -and $p.Id -ne $PID) {
-      Stop-Process -Id $p.Id -Force
+      Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
       Write-Ok "$label dihentikan via port $port (PID $($p.Id), proses $($p.ProcessName))"
     }
+  }
+}
+
+function Stop-BackendSweep {
+  # Penyisiran lapis akhir untuk backend Flask (worklog Task 13):
+  # PID yang dicatat launcher bisa BUKAN proses server sebenarnya
+  # (venv launcher spawn interpreter base sebagai child). Maka:
+  # 1) kill semua python yang command-line-nya menjalankan app backend,
+  # 2) verifikasi port 5000 benar-benar bebas; bila belum, kill owner-nya.
+  Get-CimInstance Win32_Process -Filter "Name='python.exe' OR Name='pythonw.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -match 'app\.app|ayam-counter-web' } |
+    ForEach-Object {
+      Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+      Write-Ok "Backend dihentikan via command-line sweep (PID $($_.ProcessId))"
+    }
+  Start-Sleep -Milliseconds 800
+  $left = Get-NetTCPConnection -LocalPort 5000 -State Listen -ErrorAction SilentlyContinue
+  foreach ($c in $left) {
+    Stop-Process -Id $c.OwningProcess -Force -ErrorAction SilentlyContinue
+    Write-Ok "Sisa listener :5000 dihentikan (PID $($c.OwningProcess))"
+  }
+  Start-Sleep -Milliseconds 400
+  if (Get-NetTCPConnection -LocalPort 5000 -State Listen -ErrorAction SilentlyContinue) {
+    Write-Host "  [!] Port 5000 masih terpakai - matikan manual prosesnya" -ForegroundColor Yellow
   }
 }
 
@@ -66,6 +90,7 @@ Get-CimInstance Win32_Process -Filter "Name='cloudflared.exe'" |
 # 2) Backend Flask
 Stop-PidFile "backend" "Backend Flask"
 Stop-PortListener 5000 "Backend Flask"
+Stop-BackendSweep
 
 # 3) Dashboard
 if ($KeepWeb) {

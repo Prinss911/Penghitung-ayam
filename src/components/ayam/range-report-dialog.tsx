@@ -106,20 +106,20 @@ export function RangeReportDialog({ t, lang }: { t: Dict; lang: string }) {
           <span className="hidden lg:inline">{t.laporanRentang}</span>
         </Button>
       </DialogTrigger>
-      <DialogContent className="border-zinc-800 bg-zinc-950 text-zinc-100 sm:max-w-md">
+      <DialogContent className="border-border bg-background text-foreground sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CalendarRange className="h-4 w-4 text-violet-400" />
             {t.laporanRentang}
           </DialogTitle>
-          <DialogDescription className="text-zinc-400">
+          <DialogDescription className="text-muted-foreground">
             {t.laporanRentangPh}
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label htmlFor="rr-from" className="text-zinc-400">
+            <Label htmlFor="rr-from" className="text-muted-foreground">
               {t.dariTanggal}
             </Label>
             <Input
@@ -128,13 +128,13 @@ export function RangeReportDialog({ t, lang }: { t: Dict; lang: string }) {
               value={from}
               onChange={(e) => setFrom(e.target.value)}
               aria-invalid={invalid}
-              className={`border-zinc-800 bg-zinc-900 text-zinc-100 focus-visible:ring-violet-500 ${
+              className={`border-border bg-card text-foreground focus-visible:ring-violet-500 ${
                 invalid ? "border-red-500/60" : ""
               }`}
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="rr-to" className="text-zinc-400">
+            <Label htmlFor="rr-to" className="text-muted-foreground">
               {t.sampaiTanggal}
             </Label>
             <Input
@@ -143,7 +143,7 @@ export function RangeReportDialog({ t, lang }: { t: Dict; lang: string }) {
               value={to}
               onChange={(e) => setTo(e.target.value)}
               aria-invalid={invalid}
-              className={`border-zinc-800 bg-zinc-900 text-zinc-100 focus-visible:ring-violet-500 ${
+              className={`border-border bg-card text-foreground focus-visible:ring-violet-500 ${
                 invalid ? "border-red-500/60" : ""
               }`}
             />
@@ -166,7 +166,7 @@ export function RangeReportDialog({ t, lang }: { t: Dict; lang: string }) {
               key={p.label}
               type="button"
               onClick={p.fn}
-              className="rounded-md border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-[11px] font-medium text-zinc-400 transition-colors hover:border-violet-500/50 hover:bg-violet-950/60 hover:text-violet-300"
+              className="rounded-md border border-border bg-card px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:border-violet-500/50 hover:bg-violet-950/60 hover:text-violet-300"
             >
               {p.label}
             </button>
@@ -177,7 +177,7 @@ export function RangeReportDialog({ t, lang }: { t: Dict; lang: string }) {
           <Button
             variant="outline"
             onClick={() => setOpen(false)}
-            className="border-zinc-800 bg-transparent text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100"
+            className="border-border bg-transparent text-foreground hover:bg-card hover:text-foreground"
           >
             {t.batalkan}
           </Button>

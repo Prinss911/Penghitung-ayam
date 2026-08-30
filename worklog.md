@@ -502,3 +502,117 @@ Rekomendasi ronde berikutnya (prioritas):
 3. Persist pilihan tema lintas perangkat via backend (app_state) — opsional.
 4. Ekspor riwayat capaian target (daily_summary) ke CSV dari UI.
 5. Uji multi-tab: dua browser membuka dashboard, memastikan gate PIN sessionStorage per-tab tak memicu 401 berulang.
+
+---
+
+Task ID: 10
+Agent: Cline (maintenance session)
+Date: 2026-08-29
+Task: Audit UI layer (page.tsx, layout.tsx, globals.css) → perbaikan bug, pembersihan config, migrasi token semantik Tailwind v4, aksesibilitas, dan pembaruan dokumentasi.
+
+Work Log:
+- AUDIT: laporan lengkap struktur visual section-by-section, design system, responsivitas, pola client/server, dan inkonsistensi (16 temuan, 3 tingkat severitas).
+- HAPUS tailwind.config.ts — artefak Tailwind v3 mati (v4 CSS-first mengabaikannya; isi memakai hsl(var(--...)) yang tak ada + content glob salah + plugin tailwindcss-animate tak pernah aktif). Diverifikasi 0 referensi `tailwind.config`/`@config` di 123 file.
+- package.json: hapus dependensi mati `tailwindcss-animate` (setelah config v3 dihapus, 0 pemakaian). `next-themes` DIPERTAHANKAN — ternyata dipakai src/components/ui/sonner.tsx (klaim awal "tidak dipakai" terbukti salah saat diverifikasi).
+- FIX BUG i18n (TS1117): kunci `simpan` terduplikasi di dict.id (baris 96 & 315) dan dict.en (410 & 629) dengan makna berbeda ("Terapkan/Apply" utk settings vs "Simpan/Save" utk target). Runtime selalu pakai deklarasi terakhir → tombol dialog Pengaturan kehilangan label "Terapkan". Fix: rename `simpanPengaturan` di kedua blok + update settings-dialog.tsx:224.
+- FIX i18n hardcoded: "RTSP CCTV Dahua" → dict key `kameraRtsp` (id/en); fmtDur() kini menerima `lang` (id: j/m/d, en: h/m/s), 3 call site diupdate.
+- MIGRASI TOKEN SEMANTIK: 439 kelas zinc hardcoded → token shadcn di 10 file (bg-zinc-950→bg-background, bg-zinc-900→bg-card +opacity, bg-zinc-800→bg-muted, border-zinc-800/700→border-border, text-zinc-50..300→text-foreground, text-zinc-400..700→text-muted-foreground). Regex word-boundary `(?!\d)` agar text-zinc-50 tak merusak text-zinc-500. Warna aksen amber/emerald/sky/violet/red TIDAK disentuh. 18 zinc tersisa teraudit: 12 intensional (text-zinc-950 di tombol amber, ada patch CSS-nya), 5 aksen netral dekoratif, 1 diperbaiki manual (ring-zinc-950→ring-background di audit-log-dialog).
+- Remap zinc di html.light (globals.css) DIPERTAHANKAN sebagai safety net untuk sisa zinc; patch html.light .bg-amber-500 tetap diperlukan.
+- LAYOUT: favicon CDN eksternal (z-cdn.chatglm.cn) → lokal /logo.svg; inline script no-flash kini juga init <html lang> dari localStorage("ayam-lang") (fallback "id" di catch) — pengguna EN tak lagi mendapat lang="id" sebelum hydrate. page.tsx juga menambah useEffect sinkronisasi document.documentElement.lang per perubahan toggle.
+- SPINNER: 6 spinner manual (div border) → lucide Loader2 (tombol Start/Stop/Save Target/Hapus, audit-log-dialog, 2× video-feed).
+- EMOJI → IKON: 4 "✓" (U+2713) → lucide Check (badge verified, badge 100% target, toast hapus, badge connected camera-source-dialog).
+- A11Y: baris tabel riwayat kini focusable (tabIndex=0) + operable keyboard (Enter/Space → openDetail) + aria-label + focus-visible style.
+- DOKS: README.md root DIBUAT (baru — sebelumnya tidak ada): overview, stack, menjalankan, arsitektur theming token semantik, deploy pointer. deploy/README.md & deploy/windows/README.md diaudit — bersih, tidak ada referensi usang, tidak diubah.
+
+Stage Summary:
+- tailwind.config.ts: ✅ terhapus, setup v4 self-contained (postcss @tailwindcss/postcss + components.json config:"").
+- Duplikat i18n: ✅ 0 (scan blok id 8-330 & en 331-646 terpisah).
+- Zinc hardcoded: ✅ 457 → 18 (semua teraudit & disengaja).
+- Spinner konsisten: ✅ 0 manual border-div di seluruh src/.
+- Emoji ✓ di UI: ✅ 0 (U+2713 hilang dari tsx, tersisa hanya di teks kamus bila ada).
+- Build penuh: ⏳ node_modules tidak ada di sandbox — bun install + bun run build dijalankan setelah dokumen (lihat Task ID 11 bila ada).
+
+Risiko / catatan:
+- Migrasi token menormalkan nuansa shade (mis. border dark kini putih-10% alih-alih zinc-800) — visual setara secara desain, tapi wajib cek mata di kedua tema.
+- `bg-card/60` dsb. memakai opacity modifier pada CSS var — Tailwind v4 handle via color-mix; pastikan build produksi menghasilkan utilitas tersebut.
+- backstop remap zinc di globals.css menyebabkan utilitas zinc tersisa tetap tema; jangan hapus sebelum 18 sisa dipindahkan/dipastikan.
+
+Rekomendasi ronde berikutnya (prioritas):
+1. Setelah build + uji visual kedua tema lolos: pangkas blok remap zinc & patch .bg-amber-500 di globals.css yang tak terpakai lagi.
+2. Tombol "Terapkan" tes koneksi  pintasan apply langsung dari hasil tes (satu klik testapply). [carry-over]
+3. Tambah sesi live ke grafik mingguan sebagai titik berjalan. [carry-over]
+4. keyboard: Tambah keyboard shortcut (mis. S = start/stop) untuk operator kasir.
+5. Pertimbangkan ekstraksi varian badge (border-*-900 bg-*-950 text-*-400) ke CVA untuk mengurangi duplikasi inline.
+
+---
+Task ID: 11
+Agent: OpenCode/Qwen3.8 (build fix + patch persist + docs)
+Date: 2026-08-30
+Task: Menjawab Task 10 — jalankan `bun install` + build penuh, perbaiki kegagalan build produksi (`next build`) akibat native binding `@tailwindcss/oxide` tidak ter-load oleh Turbopack di Windows, buat patch persisten, dan lengkapi dokumentasi.
+
+Work Log:
+- Build penuh pertama (menjawab catatan Task 10): `next build` GAGAL — `Error: Cannot find native binding` → `Cannot find module '@tailwindcss/oxide-win32-x64-msvc'` → `Cannot find module './tailwindcss-oxide.win32-x64-msvc.node'`. File `.node` SEBENARNYA ADA di `node_modules/@tailwindcss/oxide-win32-x64-msvc/` (3,190,272 bytes) dan ter-load normal via `node -e require(...)`.
+- Akar masalah: mekanisme resolusi fallback `requireNative()` di `node_modules/@tailwindcss/oxide/index.js` (yang mencoba `require('./tailwindcss-oxide.<platform>.<arch>.node')` relatif + nama paket platform) tidak kompatibel dengan cara Turbopack me-resolve native addon di Windows.
+- FIX: patch `requireNative()` di `node_modules/@tailwindcss/oxide/index.js` — cabang khusus `process.platform==='win32' && process.arch==='x64'` yang memuat binding via path absolut: `require(require('path').join(__dirname, '..', 'oxide-win32-x64-msvc', 'tailwindcss-oxide.win32-x64-msvc.node'))`; platform lain memakai logika asli tanpa perubahan.
+- PENTING: `.next` cache harus dihapus dulu — Turbopack meng-cache transform `node_modules`, sehingga kode lama (belum di-patch) terus dieksekusi dari cache. Setelah cache bersih + patch: build lolos.
+- PERSISTENSI: `patch-package@^8.0.1` sebagai devDependency + `"postinstall": "patch-package"` di package.json + `patches/@tailwindcss+oxide+4.3.3.patch` (patch 18 baris). Round-trip teruji: file index.js bersih → `npx patch-package` → hasil byte-identik dengan versi patch yang sudah diketahui benar (SHA-256 prefix `ABDD0B3A882CE006`).
+- TEMUAN DUAL LOCKFILE: `package-lock.json` (untracked) mem-pin keluarga Tailwind @ 4.3.3, sedangkan `bun.lock` (tracked di git) @ 4.1.18. `bun install` menurunkan node_modules ke 4.1.18; patch bernama 4.3.3 tetap teraplikasi (fuzzy) dengan warning "version mismatch" yang TIDAK fatal.
+- Solusi dual versi: patch duplikat `patches/@tailwindcss+oxide+4.1.18.patch` (isi identik) agar tiap jalur punya patch dengan nama versi yang eksak. Koeksistensi kedua patch teruji AMAN: patch-package mendeteksi patch yang sudah teraplikasi (tidak dobel-apply; marker muncul tepat 1x di file; modul tetap ter-load).
+- Insiden & pemulihan lingkungan: (a) penghapusan tak sengaja `node_modules/@tailwindcss/oxide-win32-x64-msvc` → dipulihkan dari npm cache; (b) penghapusan tak sengaja seluruh `node_modules` → dipulihkan `npm ci` (866 paket, postinstall otomatis apply patch, build lolos); (c) `bun install` tampak hang — akar penyebab: bun menunggu stdin di shell non-interaktif; workaround `< NUL`. TERNYATA bun di mesin ini juga TIDAK bisa fetch registry (hang di "Resolving dependencies") — maka `bun install tailwindcss@4.3.3` untuk konvergensi lockfile tidak mungkin; keputusan: PERTAHANKAN dual lockfile + dual patch (lebih aman daripada edit manual bun.lock).
+- DOKS: README.md root — seksi baru "Catatan Build & Patch" (penjelasan patch, dua patch file per lockfile, postinstall otomatis, tabel dual lockfile npm/bun). deploy/windows/README.md — 2 baris baru di tabel troubleshooting (error native binding → `npx patch-package`; warning version mismatch → aman diabaikan).
+- Verifikasi: build produksi LOLOS di kedua jalur — npm path (Tailwind 4.3.3) dan bun path (Tailwind 4.1.18); TSC bersih; CSS Tailwind v4 ter-generate utuh (~143 KB, utility classes + warna oklch).
+
+Stage Summary:
+- Build penuh Task 10 terjawab: `bun install` + build produksi berhasil setelah patch native binding.
+- Patch persisten: patch-package + postinstall + 2 patch file (4.3.3 untuk npm, 4.1.18 untuk bun) — auto-apply di setiap install.
+- node_modules saat ini = state bun.lock (Tailwind 4.1.18, patch teraplikasi). Kedua jalur paket manager terverifikasi build-able.
+- Dokumentasi lengkap: README root + deploy/windows README + worklog ini.
+
+Risiko / catatan:
+- Warning "patch-package detected a patch file version mismatch" (1x per install) adalah normal & tidak fatal — patch eksak tetap menang, patch versi lain terdeteksi already-applied.
+- Bila nanti upgrade Tailwind v4: jalankan ulang patching manual lalu `npx patch-package @tailwindcss/oxide` untuk meregenerasi patch dengan nama versi baru; hapus patch versi lama agar tidak menumpuk.
+- bun tidak dapat mengakses registry dari mesin ini (hang) — di mesin target deploy seharusnya normal; bila `bun install --frozen-lockfile` bermasalah, fallback ke `npm ci` (package-lock.json tersedia, meski untracked — pertimbangkan commit bila git dipakai).
+- Dual lockfile adalah keadaan sementara yang didokumentasikan; idealnya pilih satu package manager di masa depan dan hapus lockfile lainnya.
+
+Rekomendasi ronde berikutnya (prioritas):
+1. Carry-over Task 10 #1-#5 (pangkas remap zinc, tombol Terapkan 1-klik, sesi live di grafik, keyboard shortcut, ekstraksi badge CVA).
+2. Verifikasi visual kedua tema (dark/light) pasca migrasi token di browser nyata.
+3. Putuskan package manager tunggal (bun vs npm) dan konsolidasikan lockfile.
+4. Pertimbangkan commit `package-lock.json` bila repo git aktif digunakan di deployment.
+
+---
+Task ID: 12
+Agent: OpenCode/Qwen3.8 (lockfile consolidation + deploy hardening)
+Date: 2026-08-30
+Task: Eksekusi rekomendasi "npm sebagai satu-satunya sumber kebenaran" (menjawab temuan dual-lockfile Task 11), perbaikan bug fatal launcher Windows (parse error encoding), dan audit seluruh jalur deploy.
+
+Work Log:
+- KEPUTUSAN: `package-lock.json` (npm) sebagai lockfile tunggal — resolusi lebih baru (next 16.3.3, react 19.2.8, tailwind 4.3.3), npm satu-satunya jalur yang bisa dipelihara dari mesin ini (bun tak bisa akses registry di sini), npm ikut Node.js = nol prasyarat ekstra di mesin target.
+- DIHAPUS: `bun.lock` (tracked → `D` di git) dan `patches/@tailwindcss+oxide+4.1.18.patch` (patch 4.3.3 cukup — eksak dengan lockfile, tak ada lagi warning version-mismatch).
+- Start-Ayam.ps1: `Get-PkgRunner` dibalik jadi node/npm-first (bun hanya fallback eksplisit bila node absen, dengan warning); install → `npm ci` (bila package-lock.json ada).
+- package.json: script `start` — `bun` → `node`.
+- Dockerfile.web: migrasi `oven/bun:1` → `node:22-alpine` (+libc6-compat), `bun install --frozen-lockfile` → `npm ci`, `bunx prisma generate` → `npx prisma generate`, `CMD ["bun","server.js"]` → `CMD ["node","server.js"]`, COPY patches/ eksplisit untuk postinstall. ⚠️ BELUM diuji build Docker sungguhan (mesin ini tanpa Docker).
+- docker-compose.yml: healthcheck web service lama memakai `curl || bun -e fetch` — keduanya TIDAK ADA di node:22-alpine → kontainer akan selalu unhealthy. Diganti `node -e fetch(...)` (fetch native Node 22).
+- deploy/linux/install.sh & start.sh: runner dibalik node/npm-first; `bun install --frozen-lockfile` → `npm ci`; RUNNER systemd prefer node.
+- next.config.ts: komentar usang "proyek memakai bun.lock" diperbaiki.
+- README.md root + deploy/README.md + deploy/windows/README.md: referensi dual-lockfile/bun dibersihkan; seksi baru "Single Lockfile (npm)".
+- BUG FATAL WINDOWS (ditemukan saat user menjalankan start-ayam.bat pertama kali): Start-Ayam.ps1 & Stop-Ayam.ps1 tersimpan UTF-8 TANPA BOM (dibuat di sandbox Linux). Windows PowerShell 5.1 membaca file tanpa BOM sebagai ANSI/cp1252 → em dash UTF-8 (byte E2 80 94) ter-decode menjadi mojibake tiga karakter (a-circumflex + tanda euro + right double quote), dan karakter terakhir (U+201D) dianggap penutup string oleh parser → kaskade parse error (missing ')', '&' not allowed, '<' reserved, dst). FIX: tulis ulang kedua .ps1 sebagai UTF-8 DENGAN BOM (konten identik); verifikasi PS Parser: parse-errors=0 keduanya.
+- AUDIT PENUH: start-ayam.bat & stop-ayam.bat (invokasi powershell -NoProfile -ExecutionPolicy Bypass benar, murni ASCII); semua shell script deploy via `bash -n` (install.sh, start.sh, stop.sh, setup-backend.sh = OK); `git check-ignore` konfirmasi package-lock.json & patches/ TIDAK di-ignore (bisa di-commit); grep sweep: tidak ada referensi bun liar di jalur deploy (tersisa hanya fallback yang disengaja + histori worklog).
+- REVALIDASI: `npm ci` → 866 paket, postinstall `@tailwindcss/oxide@4.3.3 ✔` eksak tanpa warning; versi terpasang = lockfile persis (next 16.3.3, react 19.2.8, tailwind/oxide 4.3.3); `TSC_OK` + `BUILD_OK`.
+
+Stage Summary:
+- Single package manager: npm + package-lock.json. Satu patch (4.3.3, eksak), nol divergensi, nol warning.
+- Tiga jalur deploy (Docker/Linux/Windows) npm-first; bun hanya fallback eksplisit mesin tanpa Node.
+- Launcher Windows bebas parse-error (UTF-8 BOM); healthcheck Docker diperbaiki.
+
+Risiko / catatan:
+- Dockerfile.web + healthcheck compose belum diuji build Docker nyata — verifikasi sekali di mesin ber-Docker (`docker compose -f deploy/docker/docker-compose.yml build web`).
+- package-lock.json, patches/, README.md masih UNTRACKED di git — wajib di-commit agar ikut repo deployment.
+- `bun-types` masih ada di devDependencies (type definitions, tidak berbahaya); bisa dihapus bila mau benar-benar bersih, tapi perlu regenerasi package-lock.json.
+- tests/database-runtime-build.sh masih punya fixture bun palsu (test harness lama, di luar jalur deploy).
+
+Rekomendasi ronde berikutnya (prioritas):
+1. Commit package-lock.json + patches/ + README.md + seluruh perubahan task ini (keputusan user).
+2. Verifikasi build image Docker di mesin ber-Docker.
+3. Jalankan ulang start-ayam.bat end-to-end di mesin target (backend + dashboard + tunnel).
+4. Carry-over Task 10 #1-#5 + verifikasi visual kedua tema di browser nyata.

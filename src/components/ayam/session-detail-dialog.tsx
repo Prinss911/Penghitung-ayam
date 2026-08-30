@@ -158,12 +158,12 @@ function SessionDetailBody({
   ];
 
   return (
-    <DialogContent className="ayam-scroll max-h-[88vh] overflow-y-auto border-zinc-800 bg-zinc-950 text-zinc-100 sm:max-w-md">
+    <DialogContent className="ayam-scroll max-h-[88vh] overflow-y-auto border-border bg-background text-foreground sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Bird className="h-4 w-4 text-amber-400" />
             {t.detailSesi}
-            <Badge variant="outline" className="border-zinc-800 px-1.5 py-0 font-mono text-[10px] text-zinc-500">
+            <Badge variant="outline" className="border-border px-1.5 py-0 font-mono text-[10px] text-muted-foreground">
               #{session.id}
             </Badge>
           </DialogTitle>
@@ -172,17 +172,17 @@ function SessionDetailBody({
 
         {loading ? (
           <div className="absolute right-5 top-5">
-            <Loader2 className="h-4 w-4 animate-spin text-zinc-500" />
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
           </div>
         ) : null}
 
         <div className="space-y-4 py-1">
           {/* Asal ayam (highlight) */}
           <div className="rounded-xl border border-amber-500/25 bg-gradient-to-br from-amber-500/10 to-transparent p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               {t.asalAyam}
             </p>
-            <p className="mt-1 truncate text-xl font-bold text-zinc-50">
+            <p className="mt-1 truncate text-xl font-bold text-foreground">
               {session.asal_ayam || "—"}
             </p>
           </div>
@@ -194,13 +194,13 @@ function SessionDetailBody({
               return (
                 <div
                   key={r.label}
-                  className="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/60 p-3"
+                  className="flex items-center gap-3 rounded-lg border border-border bg-card/60 p-3"
                 >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-zinc-800 text-zinc-400">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
                     <Icon className="h-4 w-4" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                       {r.label}
                     </p>
                     <div className="truncate text-sm">{r.value}</div>
@@ -211,10 +211,10 @@ function SessionDetailBody({
           </div>
 
           {/* Grafik kumulatif sesi (snapshot timeline dari DB) */}
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-3">
-            <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+          <div className="rounded-lg border border-border bg-card/60 p-3">
+            <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
               <ChartLine className="h-3 w-3" /> {t.grafikSesi}
-              {loading ? <Loader2 className="h-3 w-3 animate-spin text-zinc-600" /> : null}
+              {loading ? <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" /> : null}
             </p>
             {(() => {
               const pts = detail?.timeline ?? [];
@@ -271,7 +271,7 @@ function SessionDetailBody({
                 );
               }
               return (
-                <p className="mt-2 rounded-md border border-dashed border-zinc-800 px-3 py-4 text-center text-[11px] italic text-zinc-600">
+                <p className="mt-2 rounded-md border border-dashed border-border px-3 py-4 text-center text-[11px] italic text-muted-foreground">
                   {t.grafikSesiKosong}
                 </p>
               );
@@ -279,13 +279,13 @@ function SessionDetailBody({
           </div>
 
           {/* Catatan */}
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-3">
-            <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+          <div className="rounded-lg border border-border bg-card/60 p-3">
+            <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
               <StickyNote className="h-3 w-3" /> {t.catatan}
             </p>
-            <p className="mt-1 text-sm text-zinc-300">
+            <p className="mt-1 text-sm text-foreground">
               {session.keterangan ? session.keterangan : (
-                <span className="italic text-zinc-600">{t.tanpaCatatan}</span>
+                <span className="italic text-muted-foreground">{t.tanpaCatatan}</span>
               )}
             </p>
           </div>
@@ -301,7 +301,7 @@ function SessionDetailBody({
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-500/80">
                     {t.fileTerkait}
                   </p>
-                  <p className="truncate text-xs font-medium text-zinc-200">
+                  <p className="truncate text-xs font-medium text-foreground">
                     {session.file_name.split("/").pop()}
                   </p>
                 </div>

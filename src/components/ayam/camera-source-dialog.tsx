@@ -289,13 +289,13 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
           size="sm"
           aria-label={t.gantiSumber}
           title={t.gantiSumber}
-          className="h-8 gap-1.5 border-zinc-800 bg-zinc-900 px-2.5 text-xs text-zinc-400 hover:border-amber-500/50 hover:bg-zinc-800 hover:text-amber-400"
+          className="h-8 gap-1.5 border-border bg-card px-2.5 text-xs text-muted-foreground hover:border-amber-500/50 hover:bg-muted hover:text-amber-400"
         >
           <Video className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">{t.gantiSumber}</span>
         </Button>
       </DialogTrigger>
-      <DialogContent className="border-zinc-800 bg-zinc-950 text-zinc-100 sm:max-w-md">
+      <DialogContent className="border-border bg-background text-foreground sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Video className="h-4 w-4 text-amber-400" />
@@ -311,11 +311,11 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
         ) : (
           <div className="space-y-5 py-2">
             {/* Current source */}
-            <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+            <div className="rounded-lg border border-border bg-card/60 p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 {t.sumberSaatIni}
               </p>
-              <p className="mt-1 truncate font-mono text-xs text-zinc-200" title={current}>
+              <p className="mt-1 truncate font-mono text-xs text-foreground" title={current}>
                 {current ? sourceLabel(current, t) : "—"}
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -327,11 +327,18 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
                       : "border-red-900 bg-red-950 text-red-400"
                   }`}
                 >
-                  {info?.connected ? "✓ connected" : "disconnected"}
+                  {info?.connected ? (
+                    <span className="inline-flex items-center gap-1">
+                      <Check className="h-3 w-3" />
+                      connected
+                    </span>
+                  ) : (
+                    "disconnected"
+                  )}
                 </Badge>
                 <Badge
                   variant="outline"
-                  className="border-zinc-800 px-1.5 py-0 text-[10px] text-zinc-400"
+                  className="border-border px-1.5 py-0 text-[10px] text-muted-foreground"
                 >
                   {current === "0"
                     ? t.webcam
@@ -342,7 +349,7 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
                 {info?.resolution ? (
                   <Badge
                     variant="outline"
-                    className="border-zinc-800 px-1.5 py-0 text-[10px] text-zinc-400"
+                    className="border-border px-1.5 py-0 text-[10px] text-muted-foreground"
                   >
                     {info.resolution} · {info.fps} fps
                   </Badge>
@@ -359,8 +366,8 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
             {/* Preset kamera (ronde 7) */}
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-medium text-zinc-400">{t.presetKamera}</p>
-                <p className="truncate text-[10px] text-zinc-600">{t.presetKameraDesc}</p>
+                <p className="text-xs font-medium text-muted-foreground">{t.presetKamera}</p>
+                <p className="truncate text-[10px] text-muted-foreground">{t.presetKameraDesc}</p>
               </div>
               {presets.length > 0 ? (
                 <div className="ayam-scroll max-h-36 space-y-1.5 overflow-y-auto pr-1">
@@ -383,14 +390,14 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
                         className={`flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border p-2.5 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
                           active
                             ? "border-sky-500/40 bg-sky-500/10 text-sky-300"
-                            : "border-zinc-800 bg-zinc-900/60 text-zinc-300 hover:border-sky-500/40 hover:bg-zinc-900"
+                            : "border-border bg-card/60 text-foreground hover:border-sky-500/40 hover:bg-card"
                         }`}
                       >
                         <span className="flex min-w-0 items-center gap-2">
                           <RadioTower className="h-3.5 w-3.5 shrink-0 text-sky-400/80" />
                           <span className="min-w-0">
                             <span className="block truncate font-semibold">{p.name}</span>
-                            <span className="block truncate font-mono text-[10px] text-zinc-500">
+                            <span className="block truncate font-mono text-[10px] text-muted-foreground">
                               {p.source.startsWith("rtsp") ? "RTSP" : p.source === "0" ? t.webcam : p.source.split("/").pop()}
                             </span>
                           </span>
@@ -406,7 +413,7 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
                               e.stopPropagation();
                               setDeletePresetName(p.name);
                             }}
-                            className="rounded-md p-1 text-zinc-600 transition-colors hover:bg-red-950/60 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-30"
+                            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-red-950/60 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-30"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
@@ -416,7 +423,7 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
                   })}
                 </div>
               ) : (
-                <p className="rounded-lg border border-dashed border-zinc-800 px-3 py-2 text-center text-[11px] text-zinc-600">
+                <p className="rounded-lg border border-dashed border-border px-3 py-2 text-center text-[11px] text-muted-foreground">
                   {t.presetKosong}
                 </p>
               )}
@@ -429,7 +436,7 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
                   placeholder={t.presetNamaPh}
                   maxLength={40}
                   aria-label={t.presetNamaPh}
-                  className="h-9 flex-1 border-zinc-800 bg-zinc-950 text-xs text-zinc-100 placeholder:text-zinc-600 focus-visible:ring-sky-500"
+                  className="h-9 flex-1 border-border bg-background text-xs text-foreground placeholder:text-muted-foreground focus-visible:ring-sky-500"
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !presetBusy) void savePreset();
                   }}
@@ -452,7 +459,7 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
 
             {/* Upload zone */}
             <div className="space-y-2">
-              <p className="text-xs font-medium text-zinc-400">{t.unggahVideo}</p>
+              <p className="text-xs font-medium text-muted-foreground">{t.unggahVideo}</p>
               <div
                 role="button"
                 tabIndex={0}
@@ -477,7 +484,7 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
                 className={`group relative flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed p-5 text-center transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
                   dragOver
                     ? "border-amber-400 bg-amber-500/10"
-                    : "border-zinc-700 bg-zinc-900/40 hover:border-amber-500/50 hover:bg-zinc-900"
+                    : "border-border bg-card/40 hover:border-amber-500/50 hover:bg-card"
                 } ${uploading ? "pointer-events-none opacity-70" : ""}`}
               >
                 {uploading ? (
@@ -487,7 +494,7 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
                       {t.mengunggah}… {uploadPct}%
                     </p>
                     <div
-                      className="mt-1 h-1.5 w-full max-w-56 overflow-hidden rounded-full bg-zinc-800"
+                      className="mt-1 h-1.5 w-full max-w-56 overflow-hidden rounded-full bg-muted"
                       role="progressbar"
                       aria-valuenow={uploadPct}
                       aria-valuemin={0}
@@ -501,9 +508,9 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
                   </>
                 ) : (
                   <>
-                    <CloudUpload className="h-6 w-6 text-zinc-500 transition-colors group-hover:text-amber-400" />
-                    <p className="text-xs font-medium text-zinc-300">{t.jatuhkanVideo}</p>
-                    <p className="text-[11px] text-zinc-500">
+                    <CloudUpload className="h-6 w-6 text-muted-foreground transition-colors group-hover:text-amber-400" />
+                    <p className="text-xs font-medium text-foreground">{t.jatuhkanVideo}</p>
+                    <p className="text-[11px] text-muted-foreground">
                       {t.atauPilih} · {t.extDiizinkan}
                     </p>
                   </>
@@ -521,7 +528,7 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
             {/* Demo videos */}
             {info && info.videos.length > 0 ? (
               <div className="space-y-2">
-                <p className="text-xs font-medium text-zinc-400">{t.pilihVideoDemo}</p>
+                <p className="text-xs font-medium text-muted-foreground">{t.pilihVideoDemo}</p>
                 <div className="ayam-scroll max-h-40 space-y-1.5 overflow-y-auto pr-1">
                   {info.videos.map((v) => {
                     const active = v.path === current;
@@ -542,14 +549,14 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
                         className={`flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border p-2.5 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
                           active
                             ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
-                            : "border-zinc-800 bg-zinc-900/60 text-zinc-300 hover:border-amber-500/40 hover:bg-zinc-900"
+                            : "border-border bg-card/60 text-foreground hover:border-amber-500/40 hover:bg-card"
                         }`}
                       >
                         <span className="flex min-w-0 items-center gap-2">
                           {v.path === "0" ? (
-                            <Webcam className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+                            <Webcam className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                           ) : (
-                            <Video className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+                            <Video className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                           )}
                           <span className="truncate font-medium">{v.name}</span>
                           {isUpload ? (
@@ -561,7 +568,7 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
                             </Badge>
                           ) : null}
                         </span>
-                        <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-zinc-500">
+                        <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-muted-foreground">
                           {v.size_mb > 0 ? `${v.size_mb} MB` : ""}
                           {isUpload ? (
                             <button
@@ -573,7 +580,7 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
                                 e.stopPropagation();
                                 setDeleteVideoName(v.name);
                               }}
-                              className="rounded-md p-1 text-zinc-600 transition-colors hover:bg-red-950/60 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-30"
+                              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-red-950/60 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-30"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
@@ -591,7 +598,7 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
             <div className="space-y-1.5">
               <label
                 htmlFor="cam-source"
-                className="text-xs font-medium text-zinc-400"
+                className="text-xs font-medium text-muted-foreground"
               >
                 {t.sumberKustom}
               </label>
@@ -602,7 +609,7 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
                   onChange={(e) => setCustom(e.target.value)}
                   placeholder={t.sumberKustomPh}
                   spellCheck={false}
-                  className="flex-1 border-zinc-800 bg-zinc-950 font-mono text-xs text-zinc-100 placeholder:text-zinc-600 focus-visible:ring-amber-500"
+                  className="flex-1 border-border bg-background font-mono text-xs text-foreground placeholder:text-muted-foreground focus-visible:ring-amber-500"
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !applying) apply(custom);
                   }}
@@ -630,7 +637,7 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
                   onClick={() => void runTest()}
                   disabled={testing || !custom.trim()}
                   title={t.kameraTesHint}
-                  className="h-7 gap-1.5 border-zinc-800 bg-zinc-900 px-2.5 text-[11px] font-medium text-zinc-400 hover:border-sky-500/50 hover:bg-zinc-800 hover:text-sky-400 disabled:opacity-50"
+                  className="h-7 gap-1.5 border-border bg-card px-2.5 text-[11px] font-medium text-muted-foreground hover:border-sky-500/50 hover:bg-muted hover:text-sky-400 disabled:opacity-50"
                 >
                   {testing ? (
                     <Loader2 className="h-3 w-3 animate-spin" />
@@ -660,10 +667,10 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
                     </span>
                   </span>
                 ) : (
-                  <span className="truncate text-[10px] text-zinc-600">{t.kameraTesHint}</span>
+                  <span className="truncate text-[10px] text-muted-foreground">{t.kameraTesHint}</span>
                 )}
               </div>
-              <p className="text-[11px] leading-relaxed text-zinc-500">
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
                 {t.sumberKameraDesc}
               </p>
             </div>
@@ -675,7 +682,7 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
           open={deletePresetName !== null}
           onOpenChange={(o) => !o && setDeletePresetName(null)}
         >
-          <AlertDialogContent className="border-zinc-800 bg-zinc-950 text-zinc-100">
+          <AlertDialogContent className="border-border bg-background text-foreground">
             <AlertDialogHeader>
               <AlertDialogTitle className="flex items-center gap-2">
                 <Trash2 className="h-4 w-4 text-red-500" />
@@ -689,7 +696,7 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
             <AlertDialogFooter>
               <AlertDialogCancel
                 disabled={presetBusy}
-                className="border-zinc-800 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+                className="border-border bg-card text-foreground hover:bg-muted hover:text-foreground"
               >
                 {t.batalkan}
               </AlertDialogCancel>
@@ -713,7 +720,7 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
           open={deleteVideoName !== null}
           onOpenChange={(o) => !o && setDeleteVideoName(null)}
         >
-          <AlertDialogContent className="border-zinc-800 bg-zinc-950 text-zinc-100">
+          <AlertDialogContent className="border-border bg-background text-foreground">
             <AlertDialogHeader>
               <AlertDialogTitle className="flex items-center gap-2">
                 <Trash2 className="h-4 w-4 text-red-500" />
@@ -729,7 +736,7 @@ export function CameraSourceDialog({ t, onSaved }: CameraSourceDialogProps) {
             <AlertDialogFooter>
               <AlertDialogCancel
                 disabled={deleteVideoBusy}
-                className="border-zinc-800 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+                className="border-border bg-card text-foreground hover:bg-muted hover:text-foreground"
               >
                 {t.batalkan}
               </AlertDialogCancel>

@@ -3,8 +3,8 @@
 # install.sh — installer Ayam Counter untuk Linux
 #
 # Melakukan:
-#   1. Cek prasyarat (bun/node, python3, curl)
-#   2. Install dependency dashboard (bun install / npm install) + prisma generate
+#   1. Cek prasyarat (node, python3, curl)
+#   2. Install dependency dashboard (npm ci) + prisma generate
 #   3. Build dashboard produksi (standalone)
 #   4. (Opsional) siapkan venv + dependency backend Flask bila folder backend ada
 #   5. (Opsional) install systemd unit   : ./install.sh --install-systemd
@@ -55,9 +55,9 @@ die()  { printf '\033[1;31m[✗]\033[0m %s\n' "$*" >&2; exit 1; }
 log "Cek prasyarat..."
 
 PKG=""
-if command -v bun >/dev/null 2>&1; then PKG="bun";
-elif command -v npm >/dev/null 2>&1; then PKG="npm";
-else die "bun atau node+npm tidak ditemukan. Install dulu: https://bun.sh atau https://nodejs.org"
+if command -v npm >/dev/null 2>&1; then PKG="npm";
+elif command -v bun >/dev/null 2>&1; then PKG="bun";
+else die "npm (Node.js) tidak ditemukan. Install dulu: https://nodejs.org"
 fi
 
 command -v python3 >/dev/null 2>&1 || warn "python3 tidak ditemukan — backend tidak bisa dijalankan di mesin ini"
@@ -69,29 +69,32 @@ echo "    web dir    : $WEB_DIR"
 # ---------------------------------------------------------------------------
 # 2. Dependency dashboard
 # ---------------------------------------------------------------------------
-log "Install dependency dashboard ($PKG install)..."
+log "Install dependency dashboard ($PKG)..."
 cd "$WEB_DIR"
 if [[ "$PKG" == "bun" ]]; then
-  bun install --frozen-lockfile
+  # Fallback langka (mesin tanpa npm): bun.lock sudah dihapus →
+  # bun resolve langsung dari package.json.
+  warn "Memakai bun tanpa lockfile (bun.lock sudah dihapus) — versi bisa beda dari package-lock.json"
+  bun install
 else
-  npm install
+  if [[ -f package-lock.json ]]; then npm ci; else npm install; fi
 fi
 
 log "Prisma generate (aman walau tidak dipakai)..."
-if [[ "$PKG" == "bun" ]]; then
-  bunx prisma generate || warn "prisma generate gagal (diabaikan — dashboard tidak memakai DB lokal)"
-else
+if [[ "$PKG" == "npm" ]]; then
   npx prisma generate || warn "prisma generate gagal (diabaikan)"
+else
+  bunx prisma generate || warn "prisma generate gagal (diabaikan — dashboard tidak memakai DB lokal)"
 fi
 
 # ---------------------------------------------------------------------------
 # 3. Build produksi (standalone)
 # ---------------------------------------------------------------------------
 log "Build dashboard produksi (next build, standalone)..."
-if [[ "$PKG" == "bun" ]]; then
-  bun run build
-else
+if [[ "$PKG" == "npm" ]]; then
   npm run build
+else
+  bun run build
 fi
 [[ -f .next/standalone/server.js ]] || die "Build selesai tapi .next/standalone/server.js tidak ada"
 log "Build OK → $WEB_DIR/.next/standalone"
@@ -124,7 +127,7 @@ if [[ $INSTALL_SYSTEMD -eq 1 ]]; then
   log "Install systemd unit (butuh sudo)..."
   command -v systemctl >/dev/null 2>&1 || die "systemctl tidak ditemukan — bukan distro systemd?"
 
-  RUNNER="$(command -v bun || command -v node)"
+  RUNNER="$(command -v node || command -v bun)"
   sed -e "s|@WEB_DIR@|$WEB_DIR|g" -e "s|@RUNNER@|$RUNNER|g" \
     "$SCRIPT_DIR/systemd/ayam-web.service" > /tmp/ayam-web.service
   sudo cp /tmp/ayam-web.service /etc/systemd/system/ayam-web.service

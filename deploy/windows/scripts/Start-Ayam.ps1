@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
   Launcher Ayam Counter untuk Windows — backend Flask + dashboard Next.js
@@ -6,7 +6,7 @@
 
 .DESCRIPTION
   Urutan kerja:
-    1. Cek prasyarat (bun/npm + python).
+    1. Cek prasyarat (node/npm + python).
     2. (Opsional) start backend Flask di folder ayam-counter-web
        (buat venv + pip install bila belum ada).
     3. Start dashboard Next.js (mode prod = build standalone, dev = next dev).
@@ -105,14 +105,19 @@ function Save-Pid([string]$name, [System.Diagnostics.Process]$proc) {
 # Deteksi tooling
 # ---------------------------------------------------------------------------
 function Get-PkgRunner {
+  # npm/node adalah runner utama (package-lock.json = sumber kebenaran tunggal).
+  $node = Get-Command node.exe -ErrorAction SilentlyContinue
+  if ($node) {
+    return @{ name = "npm"; bunSource = $null; bunxSource = $null }
+  }
+  # Fallback eksplisit: hanya bila node tidak ada sama sekali.
   $bun = Get-Command bun.exe -ErrorAction SilentlyContinue
   if ($bun) {
+    Write-Warn2 "node.exe tidak ditemukan - fallback ke bun (tanpa lockfile; versi bisa beda dari package-lock.json)"
     $bunx = Get-Command bunx.exe -ErrorAction SilentlyContinue
     return @{ name = "bun"; bunSource = $bun.Source; bunxSource = if ($bunx) { $bunx.Source } else { $null } }
   }
-  $node = Get-Command node.exe -ErrorAction SilentlyContinue
-  if (-not $node) { Write-Die "Tidak menemukan bun maupun node. Install dari https://bun.sh atau https://nodejs.org" }
-  return @{ name = "npm"; bunSource = $null; bunxSource = $null }
+  Write-Die "Tidak menemukan node maupun bun. Install dari https://nodejs.org"
 }
 
 # Return @{ Exe = path; Args = @(arg tambahan, mis. -3 utk py launcher) }
@@ -201,10 +206,16 @@ function Start-Web {
 
   # node_modules belum ada → install dulu
   if (-not (Test-Path (Join-Path $WebDir "node_modules"))) {
-    Write-Ok "Install dependency dashboard (bun install / npm install)..."
+    Write-Ok "Install dependency dashboard (npm ci dari package-lock.json)..."
     Push-Location $WebDir
     try {
-      if ($pkg.name -eq "bun") { & bun install --frozen-lockfile } else { & npm install }
+      if ($pkg.name -eq "bun") {
+        # Fallback langka (mesin tanpa node): bun.lock sudah tidak ada,
+        # jadi bun resolve dari package.json — versi bisa beda dari lockfile.
+        & bun install
+      } else {
+        if (Test-Path (Join-Path $WebDir "package-lock.json")) { & npm ci } else { & npm install }
+      }
       if ($LASTEXITCODE -ne 0) { Write-Die "Install dependency gagal" }
     } finally { Pop-Location }
   }

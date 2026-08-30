@@ -26,6 +26,7 @@ import {
   BellRing,
   Bird,
   Camera,
+  Check,
   ChevronRight,
   Cpu,
   Crosshair,
@@ -155,7 +156,7 @@ function StatCard({
       className="min-w-0"
     >
       <Card
-        className={`group relative overflow-hidden border-zinc-800 bg-zinc-900/60 transition-all duration-300 hover:-translate-y-0.5 hover:border-zinc-700 ${glow}`}
+        className={`group relative overflow-hidden border-border bg-card/60 transition-all duration-300 hover:-translate-y-0.5 hover:border-border ${glow}`}
       >
         {/* garis aksen warna per kartu (ronde 7) */}
         <div
@@ -166,14 +167,14 @@ function StatCard({
         <CardContent className="p-4 sm:p-5">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 sm:text-[11px]">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground sm:text-[11px]">
                 {label}
               </p>
               {/* ronde 8: ukuran responsif — tidak lagi terpotong di layar 390px */}
-              <p className="mt-1.5 truncate text-xl font-bold tabular-nums text-zinc-50 sm:text-2xl md:text-3xl">
+              <p className="mt-1.5 truncate text-xl font-bold tabular-nums text-foreground sm:text-2xl md:text-3xl">
                 {value}
               </p>
-              {sub ? <div className="mt-1 text-xs text-zinc-500">{sub}</div> : null}
+              {sub ? <div className="mt-1 text-xs text-muted-foreground">{sub}</div> : null}
             </div>
             <div
               className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-transform duration-300 group-hover:scale-110 sm:h-10 sm:w-10 ${accent}`}
@@ -188,15 +189,16 @@ function StatCard({
 }
 
 // Format durasi "Xj Ym Zs" / "Ym Zs" / "Zs" dari detik
-function fmtDur(secs: number): string {
+function fmtDur(secs: number, lang: Lang = "en"): string {
   if (!Number.isFinite(secs) || secs <= 0) return "—";
   const s = Math.round(secs);
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const ss = s % 60;
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m ${ss.toString().padStart(2, "0")}s`;
-  return `${ss}s`;
+  const U = lang === "id" ? { h: "j", s: "d" } : { h: "h", s: "s" };
+  if (h > 0) return `${h}${U.h} ${m}m`;
+  if (m > 0) return `${m}m ${ss.toString().padStart(2, "0")}${U.s}`;
+  return `${ss}${U.s}`;
 }
 
 /** Satu hari pada grafik mingguan (ronde 9) */
@@ -227,7 +229,7 @@ function WeeklyTooltipContent({
   const pct =
     d.target > 0 ? Math.min(999, Math.round((d.total / d.target) * 100)) : null;
   return (
-    <div className="rounded-lg border border-zinc-700 bg-popover px-3 py-2 text-xs shadow-xl">
+    <div className="rounded-lg border border-border bg-popover px-3 py-2 text-xs shadow-xl">
       <p className="mb-1 font-semibold text-foreground">
         {d.isToday ? (lang === "id" ? "Hari ini" : "Today") : d.day.replace("-", "/")}
         {d.sessions > 0 ? (
@@ -283,7 +285,7 @@ function ConnBadge({ mode, t }: { mode: string; t: (typeof dict)[Lang] }) {
     { cls: string; icon: React.ComponentType<{ className?: string }>; text: string }
   > = {
     connecting: {
-      cls: "bg-zinc-800 text-zinc-400 border-zinc-700",
+      cls: "bg-muted text-muted-foreground border-border",
       icon: Signal,
       text: `${t.koneksiMode}: …`,
     },
@@ -338,6 +340,12 @@ export default function AyamCounterPage() {
       /* abaikan */
     }
   }, []);
+
+  // Sinkron atribut <html lang> dengan bahasa aktif (aksesibilitas/SEO)
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
+
 
   const t = dict[lang];
 
@@ -725,7 +733,7 @@ export default function AyamCounterPage() {
       const res = await ayamApi.deleteSession(deleteTarget.id);
       toast.success(t.sesiDihapus, {
         description: res.file_removed
-          ? `${deleteTarget.file_name?.split("/").pop()} — ✓`
+          ? `${deleteTarget.file_name?.split("/").pop()}`
           : `#${deleteTarget.id}`,
       });
       setDeleteTarget(null);
@@ -900,15 +908,15 @@ export default function AyamCounterPage() {
       ? "bg-emerald-950 text-emerald-400 border-emerald-900"
       : device?.backend === "cpu"
         ? "bg-amber-950 text-amber-400 border-amber-900"
-        : "bg-zinc-800 text-zinc-300 border-zinc-700";
+        : "bg-muted text-foreground border-border";
 
   return (
-    <div className="relative flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
+    <div className="relative flex min-h-screen flex-col bg-background text-foreground">
       {/* ==== Background depth: glow atas + grid halus (ronde 8: class agar light mode juga terlihat) ==== */}
       <div aria-hidden className="ayam-bg-layer pointer-events-none fixed inset-0 z-0" />
 
       {/* ================= HEADER ================= */}
-      <header className="sticky top-0 z-50 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur supports-[backdrop-filter]:bg-zinc-950/60">
+      <header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         {/* garis aksen gradasi di bawah header */}
         <div
           aria-hidden
@@ -925,7 +933,7 @@ export default function AyamCounterPage() {
               <h1 className="truncate text-base font-bold leading-tight sm:text-lg">
                 {t.appName}
               </h1>
-              <p className="hidden truncate text-xs text-zinc-500 sm:block">
+              <p className="hidden truncate text-xs text-muted-foreground sm:block">
                 {t.appTagline}
               </p>
             </div>
@@ -943,23 +951,23 @@ export default function AyamCounterPage() {
               aria-label={notifEnabled ? t.notifNonaktifkan : t.notifAktifkan}
               aria-pressed={notifEnabled}
               title={notifEnabled ? t.notifNonaktifkan : t.notifAktifkan}
-              className={`h-9 w-9 border-zinc-800 bg-zinc-900 transition-colors ${
+              className={`h-9 w-9 border-border bg-card transition-colors ${
                 notifEnabled
-                  ? "border-emerald-900 text-emerald-400 hover:bg-zinc-800 hover:text-emerald-300"
-                  : "text-zinc-400 hover:border-emerald-500/50 hover:bg-zinc-800 hover:text-emerald-400"
+                  ? "border-emerald-900 text-emerald-400 hover:bg-muted hover:text-emerald-300"
+                  : "text-muted-foreground hover:border-emerald-500/50 hover:bg-muted hover:text-emerald-400"
               }`}
             >
               {notifEnabled ? <BellRing className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
             </Button>
             <ThemeToggle t={t} />
             {/* Language toggle */}
-            <div className="flex overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900 text-xs font-semibold">
+            <div className="flex overflow-hidden rounded-lg border border-border bg-card text-xs font-semibold">
               <button
                 onClick={() => setLang("id")}
                 className={`px-3 py-1.5 transition-colors ${
                   lang === "id"
                     ? "bg-amber-500 text-zinc-950"
-                    : "text-zinc-400 hover:text-zinc-200"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
                 aria-pressed={lang === "id"}
               >
@@ -970,7 +978,7 @@ export default function AyamCounterPage() {
                 className={`px-3 py-1.5 transition-colors ${
                   lang === "en"
                     ? "bg-amber-500 text-zinc-950"
-                    : "text-zinc-400 hover:text-zinc-200"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
                 aria-pressed={lang === "en"}
               >
@@ -1009,16 +1017,16 @@ export default function AyamCounterPage() {
               ) : lastSession ? (
                 <span
                   className="inline-flex max-w-full items-center gap-1.5 truncate text-amber-400/90"
-                  title={`${lastSession.asal_ayam} · ${lastSession.total} ${t.totalAyam.toLowerCase()} · ${fmtDur(lastSession.durasi_detik)}`}
+                  title={`${lastSession.asal_ayam} · ${lastSession.total} ${t.totalAyam.toLowerCase()} · ${fmtDur(lastSession.durasi_detik, lang)}`}
                 >
                   <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
                   <span className="truncate">
                     {t.sesiTerakhir}: {lastSession.asal_ayam} · {lastSession.total} {" "}
-                    {(lang === "id" ? "ayam" : "chickens")} · {fmtDur(lastSession.durasi_detik)}
+                    {(lang === "id" ? "ayam" : "chickens")} · {fmtDur(lastSession.durasi_detik, lang)}
                   </span>
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1.5 text-zinc-500">
+                <span className="inline-flex items-center gap-1.5 text-muted-foreground">
                   <LiveDot active={false} /> {t.menungguSesi}
                 </span>
               )
@@ -1049,7 +1057,7 @@ export default function AyamCounterPage() {
               sessionActive ? (
                 <span className="text-emerald-400">{t.aktif}</span>
               ) : (
-                <span className="text-zinc-400">{t.nonaktif}</span>
+                <span className="text-muted-foreground">{t.nonaktif}</span>
               )
             }
             sub={
@@ -1073,7 +1081,7 @@ export default function AyamCounterPage() {
                     variant="outline"
                     className={`${backendBadge} px-1.5 py-0 text-[10px] uppercase`}
                   >
-                    {device.verified ? "✓ verified" : "unverified"}
+                    {device.verified ? (<span className="inline-flex items-center gap-0.5"><Check className="h-2.5 w-2.5" />verified</span>) : "unverified"}
                   </Badge>
                   {device.model_loaded ? (
                     t.modelTermuat
@@ -1082,7 +1090,7 @@ export default function AyamCounterPage() {
                   )}
                 </span>
               ) : (
-                <Skeleton className="h-3 w-24 bg-zinc-800" />
+                <Skeleton className="h-3 w-24 bg-muted" />
               )
             }
             accent="bg-violet-500/15 text-violet-400"
@@ -1099,7 +1107,7 @@ export default function AyamCounterPage() {
           transition={{ duration: 0.35, delay: 0.06 }}
         >
           {/* ---------- Video feed ---------- */}
-          <Card className="overflow-hidden border-zinc-800 bg-zinc-900/60 lg:col-span-2">
+          <Card className="overflow-hidden border-border bg-card/60 lg:col-span-2">
             <CardHeader className="pb-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -1116,7 +1124,7 @@ export default function AyamCounterPage() {
                     className={`gap-1.5 px-2.5 py-1 font-semibold ${
                       sessionActive
                         ? "border-emerald-900 bg-emerald-950 text-emerald-400"
-                        : "border-zinc-700 bg-zinc-900 text-zinc-400"
+                        : "border-border bg-card text-muted-foreground"
                     }`}
                   >
                     <LiveDot active={sessionActive} />
@@ -1126,7 +1134,7 @@ export default function AyamCounterPage() {
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="relative mx-4 mb-4 overflow-hidden rounded-lg border border-zinc-800 bg-black sm:mx-6">
+              <div className="relative mx-4 mb-4 overflow-hidden rounded-lg border border-border bg-black sm:mx-6">
                 <div className="aspect-video w-full">
                   <VideoFeed
                     url={ayamApi.videoFeedUrl()}
@@ -1140,13 +1148,13 @@ export default function AyamCounterPage() {
                 </div>
 
                 {/* overlay footer info */}
-                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-800 bg-zinc-950/90 px-3 py-2 text-[11px] text-zinc-500">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-background/90 px-3 py-2 text-[11px] text-muted-foreground">
                   <span className="inline-flex items-center gap-1.5">
                     <Crosshair className="h-3 w-3 text-amber-400" />
                     {t.sumberKamera}:{" "}
                     {device
                       ? device.camera_source.startsWith("rtsp")
-                        ? "RTSP CCTV Dahua"
+                        ? t.kameraRtsp
                         : t.fileVideo
                       : "…"}
                   </span>
@@ -1173,7 +1181,7 @@ export default function AyamCounterPage() {
           </Card>
 
           {/* ---------- Session control ---------- */}
-          <Card className="border-zinc-800 bg-zinc-900/60">
+          <Card className="border-border bg-card/60">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <Play className="h-4 w-4 text-amber-400" />
@@ -1183,7 +1191,7 @@ export default function AyamCounterPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-1.5">
-                <Label htmlFor="asal" className="text-zinc-400">
+                <Label htmlFor="asal" className="text-muted-foreground">
                   {t.asalAyam} <span className="text-amber-500">*</span>
                 </Label>
                 <Input
@@ -1195,7 +1203,7 @@ export default function AyamCounterPage() {
                   list="asal-ayam-options"
                   aria-required="true"
                   aria-invalid={!canStart}
-                  className={`border-zinc-800 bg-zinc-950 text-zinc-100 placeholder:text-zinc-600 focus-visible:ring-amber-500 ${
+                  className={`border-border bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-amber-500 ${
                     !canStart ? "border-amber-500/40" : ""
                   }`}
                 />
@@ -1212,7 +1220,7 @@ export default function AyamCounterPage() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label htmlFor="tgl" className="text-zinc-400">
+                  <Label htmlFor="tgl" className="text-muted-foreground">
                     {t.tanggal}
                   </Label>
                   <Input
@@ -1221,11 +1229,11 @@ export default function AyamCounterPage() {
                     value={tanggal}
                     onChange={(e) => setTanggal(e.target.value)}
                     disabled={sessionActive}
-                    className="border-zinc-800 bg-zinc-950 text-zinc-100 focus-visible:ring-amber-500"
+                    className="border-border bg-background text-foreground focus-visible:ring-amber-500"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="jam" className="text-zinc-400">
+                  <Label htmlFor="jam" className="text-muted-foreground">
                     {t.jam}
                   </Label>
                   <Input
@@ -1234,12 +1242,12 @@ export default function AyamCounterPage() {
                     value={jam}
                     onChange={(e) => setJam(e.target.value)}
                     disabled={sessionActive}
-                    className="border-zinc-800 bg-zinc-950 text-zinc-100 focus-visible:ring-amber-500"
+                    className="border-border bg-background text-foreground focus-visible:ring-amber-500"
                   />
                 </div>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="ket" className="text-zinc-400">
+                <Label htmlFor="ket" className="text-muted-foreground">
                   {t.keterangan}
                 </Label>
                 <Input
@@ -1248,7 +1256,7 @@ export default function AyamCounterPage() {
                   onChange={(e) => setKeterangan(e.target.value)}
                   placeholder={t.keteranganPh}
                   disabled={sessionActive}
-                  className="border-zinc-800 bg-zinc-950 text-zinc-100 placeholder:text-zinc-600 focus-visible:ring-amber-500"
+                  className="border-border bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-amber-500"
                 />
               </div>
 
@@ -1262,10 +1270,10 @@ export default function AyamCounterPage() {
                   <p className="mb-1.5 flex items-center gap-1.5 font-semibold text-emerald-400">
                     <LiveDot active /> {t.aktifBerjalan}
                   </p>
-                  <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-zinc-400">
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-muted-foreground">
                     <span className="truncate">
                       {t.asalAyam}:{" "}
-                      <span className="font-medium text-zinc-200">
+                      <span className="font-medium text-foreground">
                         {stats.session_data.asal_ayam}
                       </span>
                     </span>
@@ -1278,13 +1286,13 @@ export default function AyamCounterPage() {
                     </span>
                     <span>
                       {t.tanggal}:{" "}
-                      <span className="font-medium text-zinc-200">
+                      <span className="font-medium text-foreground">
                         {stats.session_data.tanggal}
                       </span>
                     </span>
                     <span>
                       {t.jam}:{" "}
-                      <span className="font-medium text-zinc-200">
+                      <span className="font-medium text-foreground">
                         {stats.session_data.jam}
                       </span>
                     </span>
@@ -1358,7 +1366,7 @@ export default function AyamCounterPage() {
                   >
                     {busy === "stop" ? (
                       <>
-                        <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         {t.menghentikan}
                       </>
                     ) : (
@@ -1377,7 +1385,7 @@ export default function AyamCounterPage() {
                   >
                     {busy === "start" ? (
                       <>
-                        <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-zinc-900/40 border-t-zinc-900" />
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         {t.memuat}
                       </>
                     ) : (
@@ -1392,7 +1400,7 @@ export default function AyamCounterPage() {
                   onClick={() => void guardedAction(handleReset)()}
                   disabled={busy === "reset" || sessionActive}
                   variant="outline"
-                  className="h-10 border-zinc-800 bg-transparent text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100"
+                  className="h-10 border-border bg-transparent text-foreground hover:bg-card hover:text-foreground"
                 >
                   <RotateCcw className="mr-2 h-4 w-4" />
                   {t.reset}
@@ -1417,7 +1425,7 @@ export default function AyamCounterPage() {
           />
 
           {/* Weekly summary */}
-          <Card className="border-zinc-800 bg-zinc-900/60">
+          <Card className="border-border bg-card/60">
             <CardHeader className="pb-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -1446,14 +1454,14 @@ export default function AyamCounterPage() {
             <CardContent>
               {/* ---- Target harian: progres hari ini (ronde 8) ---- */}
               <div
-                className="mb-3 rounded-lg border border-zinc-800/80 bg-zinc-900/40 p-3 transition-colors hover:border-zinc-700/80"
+                className="mb-3 rounded-lg border border-border/80 bg-card/40 p-3 transition-colors hover:border-border/80"
                 role="group"
                 aria-label={t.targetHarian}
               >
                 <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
                   <div className="flex min-w-0 items-center gap-1.5">
                     <Target className="h-3.5 w-3.5 shrink-0 text-amber-400" />
-                    <span className="truncate text-xs font-semibold text-zinc-300">
+                    <span className="truncate text-xs font-semibold text-foreground">
                       {t.targetHarian}
                     </span>
                     {targetPct >= 100 ? (
@@ -1461,7 +1469,7 @@ export default function AyamCounterPage() {
                         variant="outline"
                         className="border-emerald-900 bg-emerald-950 px-1.5 py-0 text-[9px] font-bold uppercase text-emerald-400"
                       >
-                        ✓ 100%
+                        <Check className="mr-0.5 inline h-2.5 w-2.5" />100%
                       </Badge>
                     ) : null}
                   </div>
@@ -1470,7 +1478,7 @@ export default function AyamCounterPage() {
                       className={`font-mono text-[11px] ${
                         targetPct >= 100
                           ? "text-emerald-400"
-                          : "text-zinc-400"
+                          : "text-muted-foreground"
                       }`}
                     >
                       {target > 0
@@ -1483,7 +1491,7 @@ export default function AyamCounterPage() {
                       onClick={openTargetDialog}
                       title={t.targetAtur}
                       aria-label={t.targetAtur}
-                      className="h-6 gap-1 px-1.5 text-[10px] text-zinc-500 hover:bg-amber-950/50 hover:text-amber-400"
+                      className="h-6 gap-1 px-1.5 text-[10px] text-muted-foreground hover:bg-amber-950/50 hover:text-amber-400"
                     >
                       <Pencil className="h-2.5 w-2.5" />
                       {t.targetAtur}
@@ -1492,7 +1500,7 @@ export default function AyamCounterPage() {
                 </div>
                 {target > 0 ? (
                   <div
-                    className="relative mt-2 h-2 overflow-hidden rounded-full bg-zinc-800"
+                    className="relative mt-2 h-2 overflow-hidden rounded-full bg-muted"
                     role="progressbar"
                     aria-valuenow={targetPct}
                     aria-valuemin={0}
@@ -1596,13 +1604,13 @@ export default function AyamCounterPage() {
                 </ResponsiveContainer>
               </div>
               {/* Legenda + ringkasan capaian mingguan (ronde 9) */}
-              <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[10px] text-zinc-500">
+              <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <span
                     className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold ${
                       weeklySummary.achievedDays > 0
                         ? "border-emerald-900 bg-emerald-950 text-emerald-400"
-                        : "border-zinc-800 bg-zinc-900 text-zinc-500"
+                        : "border-border bg-card text-muted-foreground"
                     }`}
                     title={t.capaiTarget}
                   >
@@ -1610,7 +1618,7 @@ export default function AyamCounterPage() {
                     {weeklySummary.achievedDays}/7 {t.capaiTarget}
                   </span>
                   <span className="inline-flex items-center gap-1">
-                    <span className="font-mono text-[10px] font-semibold text-zinc-400">
+                    <span className="font-mono text-[10px] font-semibold text-muted-foreground">
                       {weeklySummary.totalWeek.toLocaleString(lang === "id" ? "id-ID" : "en-US")}
                     </span>
                     {t.total7Hari}
@@ -1645,7 +1653,7 @@ export default function AyamCounterPage() {
           transition={{ duration: 0.35, delay: 0.18 }}
         >
           {/* Hardware detail */}
-          <Card className="border-zinc-800 bg-zinc-900/60">
+          <Card className="border-border bg-card/60">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <Cpu className="h-4 w-4 text-violet-400" />
@@ -1657,33 +1665,33 @@ export default function AyamCounterPage() {
               {device ? (
                 <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                   <div>
-                    <dt className="text-xs text-zinc-500">{t.backend}</dt>
+                    <dt className="text-xs text-muted-foreground">{t.backend}</dt>
                     <dd className="mt-0.5 font-semibold uppercase">
                       {device.backend}
                       {device.device && device.device !== device.backend ? (
-                        <span className="ml-1.5 text-xs font-normal text-zinc-400">
+                        <span className="ml-1.5 text-xs font-normal text-muted-foreground">
                           ({device.device})
                         </span>
                       ) : null}
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-xs text-zinc-500">{t.vendor}</dt>
+                    <dt className="text-xs text-muted-foreground">{t.vendor}</dt>
                     <dd className="mt-0.5 font-semibold">{device.vendor}</dd>
                   </div>
                   <div>
-                    <dt className="text-xs text-zinc-500">{t.presisi}</dt>
+                    <dt className="text-xs text-muted-foreground">{t.presisi}</dt>
                     <dd className="mt-0.5 font-semibold">{device.precision}</dd>
                   </div>
                   <div>
-                    <dt className="text-xs text-zinc-500">Confidence</dt>
+                    <dt className="text-xs text-muted-foreground">Confidence</dt>
                     <dd className="mt-0.5 font-semibold tabular-nums">
                       {(device.confidence * 100).toFixed(0)}%
                     </dd>
                   </div>
                   <div className="col-span-2">
-                    <dt className="text-xs text-zinc-500">{t.model}</dt>
-                    <dd className="mt-0.5 flex items-center gap-2 font-mono text-xs text-zinc-300">
+                    <dt className="text-xs text-muted-foreground">{t.model}</dt>
+                    <dd className="mt-0.5 flex items-center gap-2 font-mono text-xs text-foreground">
                       <span className="truncate">{device.model_path}</span>
                       <Badge
                         variant="outline"
@@ -1697,11 +1705,11 @@ export default function AyamCounterPage() {
                       </Badge>
                     </dd>
                   </div>
-                  <div className="col-span-2 rounded-md bg-zinc-950/60 p-2.5">
-                    <dt className="flex items-center gap-1.5 text-xs text-zinc-500">
+                  <div className="col-span-2 rounded-md bg-background/60 p-2.5">
+                    <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <Info className="h-3 w-3" /> {t.alasan}
                     </dt>
-                    <dd className="mt-1 text-xs leading-relaxed text-zinc-400">
+                    <dd className="mt-1 text-xs leading-relaxed text-muted-foreground">
                       {device.reason}
                     </dd>
                   </div>
@@ -1709,7 +1717,7 @@ export default function AyamCounterPage() {
               ) : (
                 <div className="space-y-3">
                   {[0, 1, 2, 3].map((i) => (
-                    <Skeleton key={i} className="h-5 w-full bg-zinc-800" />
+                    <Skeleton key={i} className="h-5 w-full bg-muted" />
                   ))}
                 </div>
               )}
@@ -1717,7 +1725,7 @@ export default function AyamCounterPage() {
           </Card>
 
           {/* Exports list */}
-          <Card className="border-zinc-800 bg-zinc-900/60">
+          <Card className="border-border bg-card/60">
             <CardHeader className="pb-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -1737,27 +1745,27 @@ export default function AyamCounterPage() {
             </CardHeader>
             <CardContent>
               {sortedExports.length === 0 ? (
-                <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-800 py-10 text-center">
-                  <FileSpreadsheet className="h-8 w-8 text-zinc-700" />
-                  <p className="text-sm font-medium text-zinc-400">{t.belumAdaFile}</p>
-                  <p className="text-xs text-zinc-600">{t.belumAdaFileDesc}</p>
+                <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border py-10 text-center">
+                  <FileSpreadsheet className="h-8 w-8 text-muted-foreground" />
+                  <p className="text-sm font-medium text-muted-foreground">{t.belumAdaFile}</p>
+                  <p className="text-xs text-muted-foreground">{t.belumAdaFileDesc}</p>
                 </div>
               ) : (
                 <div className="ayam-scroll max-h-96 space-y-2 overflow-y-auto pr-1">
                   {sortedExports.map((f) => (
                     <div
                       key={f.name}
-                      className="group flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 transition-colors hover:border-zinc-700 hover:bg-zinc-900"
+                      className="group flex items-center justify-between gap-3 rounded-lg border border-border bg-background/60 p-3 transition-colors hover:border-border hover:bg-card"
                     >
                       <div className="flex min-w-0 items-center gap-3">
                         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-emerald-500/15 text-emerald-400">
                           <FileSpreadsheet className="h-4 w-4" />
                         </div>
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-zinc-200">
+                          <p className="truncate text-sm font-medium text-foreground">
                             {f.name}
                           </p>
-                          <p className="text-[11px] text-zinc-500">
+                          <p className="text-[11px] text-muted-foreground">
                             {f.modified_str} · {f.size_kb} KB
                           </p>
                         </div>
@@ -1768,14 +1776,14 @@ export default function AyamCounterPage() {
                           download
                           title={t.unduhCsv}
                           aria-label={`${t.unduhCsv} ${f.name}`}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-zinc-800 bg-zinc-900 text-zinc-400 transition-colors hover:border-sky-500/50 hover:bg-sky-500 hover:text-zinc-950"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-colors hover:border-sky-500/50 hover:bg-sky-500 hover:text-zinc-950"
                         >
                           <FileDown className="h-4 w-4" />
                         </a>
                         <a
                           href={ayamApi.downloadUrl(f.name)}
                           download
-                          className="inline-flex h-9 items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900 px-3 text-xs font-semibold text-zinc-300 transition-colors hover:border-amber-500/50 hover:bg-amber-500 hover:text-zinc-950"
+                          className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-xs font-semibold text-foreground transition-colors hover:border-amber-500/50 hover:bg-amber-500 hover:text-zinc-950"
                           aria-label={`${t.unduh} ${f.name}`}
                         >
                           <Download className="h-3.5 w-3.5" />
@@ -1797,7 +1805,7 @@ export default function AyamCounterPage() {
           animate={fadeUp.animate}
           transition={{ duration: 0.35, delay: 0.24 }}
         >
-          <Card className="border-zinc-800 bg-zinc-900/60">
+          <Card className="border-border bg-card/60">
             <CardHeader className="pb-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -1810,12 +1818,12 @@ export default function AyamCounterPage() {
                 {/* filter controls */}
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="relative">
-                    <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-600" />
+                    <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                     <Input
                       value={historySearch}
                       onChange={(e) => setHistorySearch(e.target.value)}
                       placeholder={t.cariRiwayat}
-                      className="h-9 w-44 border-zinc-800 bg-zinc-950 pl-8 text-xs text-zinc-100 placeholder:text-zinc-600 focus-visible:ring-amber-500"
+                      className="h-9 w-44 border-border bg-background pl-8 text-xs text-foreground placeholder:text-muted-foreground focus-visible:ring-amber-500"
                     />
                   </div>
                   <Input
@@ -1823,7 +1831,7 @@ export default function AyamCounterPage() {
                     value={historyDate}
                     onChange={(e) => setHistoryDate(e.target.value)}
                     aria-label={t.filterTanggal}
-                    className="h-9 w-36 border-zinc-800 bg-zinc-950 text-xs text-zinc-100 focus-visible:ring-amber-500"
+                    className="h-9 w-36 border-border bg-background text-xs text-foreground focus-visible:ring-amber-500"
                   />
                   {/* Laporan harian PDF (mengikuti filter tanggal / hari ini) */}
                   <a
@@ -1846,12 +1854,12 @@ export default function AyamCounterPage() {
                         setHistorySearch("");
                         setHistoryDate("");
                       }}
-                      className="h-9 px-2 text-xs text-zinc-400 hover:text-zinc-200"
+                      className="h-9 px-2 text-xs text-muted-foreground hover:text-foreground"
                     >
                       {t.tampilkanSemua}
                     </Button>
                   ) : null}
-                  <Badge variant="outline" className="border-zinc-800 px-2 py-1 text-[10px] text-zinc-500">
+                  <Badge variant="outline" className="border-border px-2 py-1 text-[10px] text-muted-foreground">
                     {filteredHistory.length} {t.hasilFilter}
                   </Badge>
                 </div>
@@ -1859,40 +1867,40 @@ export default function AyamCounterPage() {
             </CardHeader>
             <CardContent>
               {history.history.length === 0 ? (
-                <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-800 py-10 text-center">
-                  <History className="h-8 w-8 text-zinc-700" />
-                  <p className="text-sm font-medium text-zinc-400">{t.belumAdaRiwayat}</p>
-                  <p className="text-xs text-zinc-600">{t.belumAdaRiwayatDesc}</p>
+                <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border py-10 text-center">
+                  <History className="h-8 w-8 text-muted-foreground" />
+                  <p className="text-sm font-medium text-muted-foreground">{t.belumAdaRiwayat}</p>
+                  <p className="text-xs text-muted-foreground">{t.belumAdaRiwayatDesc}</p>
                 </div>
               ) : filteredHistory.length === 0 ? (
-                <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-800 py-10 text-center">
-                  <Search className="h-8 w-8 text-zinc-700" />
-                  <p className="text-sm font-medium text-zinc-400">
+                <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border py-10 text-center">
+                  <Search className="h-8 w-8 text-muted-foreground" />
+                  <p className="text-sm font-medium text-muted-foreground">
                     {lang === "id" ? "Tidak ada hasil" : "No results"}
                   </p>
                 </div>
               ) : (
-                <div className="ayam-scroll max-h-96 overflow-x-auto overflow-y-auto rounded-lg border border-zinc-800">
+                <div className="ayam-scroll max-h-96 overflow-x-auto overflow-y-auto rounded-lg border border-border">
                   <Table>
-                    <TableHeader className="sticky top-0 z-10 bg-zinc-900">
-                      <TableRow className="border-zinc-800 hover:bg-zinc-900">
-                        <TableHead className="text-zinc-500">#</TableHead>
-                        <TableHead className="text-zinc-500">{t.asalAyam}</TableHead>
-                        <TableHead className="text-zinc-500">{t.tanggal}</TableHead>
-                        <TableHead className="text-zinc-500">{t.jam}</TableHead>
-                        <TableHead className="hidden text-right text-zinc-500 md:table-cell">
+                    <TableHeader className="sticky top-0 z-10 bg-card">
+                      <TableRow className="border-border hover:bg-card">
+                        <TableHead className="text-muted-foreground">#</TableHead>
+                        <TableHead className="text-muted-foreground">{t.asalAyam}</TableHead>
+                        <TableHead className="text-muted-foreground">{t.tanggal}</TableHead>
+                        <TableHead className="text-muted-foreground">{t.jam}</TableHead>
+                        <TableHead className="hidden text-right text-muted-foreground md:table-cell">
                           {t.durasi}
                         </TableHead>
-                        <TableHead className="hidden text-right text-zinc-500 lg:table-cell">
+                        <TableHead className="hidden text-right text-muted-foreground lg:table-cell">
                           {t.rataRata}
                         </TableHead>
-                        <TableHead className="text-right text-zinc-500">
+                        <TableHead className="text-right text-muted-foreground">
                           {t.total}
                         </TableHead>
-                        <TableHead className="text-right text-zinc-500">
+                        <TableHead className="text-right text-muted-foreground">
                           {t.selesai}
                         </TableHead>
-                        <TableHead className="w-16 text-right text-zinc-500">
+                        <TableHead className="w-16 text-right text-muted-foreground">
                           <span className="sr-only">{t.hapus}</span>
                           <Trash2 className="ml-auto h-3.5 w-3.5" />
                         </TableHead>
@@ -1913,23 +1921,31 @@ export default function AyamCounterPage() {
                         return (
                         <TableRow
                           key={h.id}
-                          className="group cursor-pointer border-zinc-800/70 transition-colors hover:bg-amber-500/5"
+                          className="group cursor-pointer border-border/70 transition-colors hover:bg-amber-500/5 focus-visible:bg-amber-500/10 focus-visible:outline-none"
                           onClick={() => openDetail(h)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              openDetail(h);
+                            }
+                          }}
+                          tabIndex={0}
                           title={t.lihatDetail}
+                          aria-label={`${t.lihatDetail} #${h.id} (${h.asal_ayam})`}
                         >
-                          <TableCell className="font-mono text-xs text-zinc-500">
+                          <TableCell className="font-mono text-xs text-muted-foreground">
                             {h.id}
                           </TableCell>
-                          <TableCell className="max-w-40 truncate font-medium text-zinc-200">
+                          <TableCell className="max-w-40 truncate font-medium text-foreground">
                             <span className="inline-flex items-center gap-1.5">
                               {h.asal_ayam}
-                              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-600 opacity-0 transition-opacity group-hover:opacity-100" />
+                              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
                             </span>
                           </TableCell>
-                          <TableCell className="text-zinc-400">{h.tanggal}</TableCell>
-                          <TableCell className="text-zinc-400">{h.jam}</TableCell>
-                          <TableCell className="hidden text-right font-mono text-[11px] tabular-nums text-zinc-400 md:table-cell">
-                            {Number.isFinite(durSec) && durSec > 0 ? fmtDur(durSec) : "—"}
+                          <TableCell className="text-muted-foreground">{h.tanggal}</TableCell>
+                          <TableCell className="text-muted-foreground">{h.jam}</TableCell>
+                          <TableCell className="hidden text-right font-mono text-[11px] tabular-nums text-muted-foreground md:table-cell">
+                            {Number.isFinite(durSec) && durSec > 0 ? fmtDur(durSec, lang) : "—"}
                           </TableCell>
                           <TableCell className="hidden text-right font-mono text-[11px] tabular-nums text-sky-400/90 lg:table-cell">
                             {Number.isFinite(rate) && rate > 0
@@ -1939,7 +1955,7 @@ export default function AyamCounterPage() {
                           <TableCell className="text-right font-bold tabular-nums text-amber-400">
                             {h.total_count?.toLocaleString() ?? 0}
                           </TableCell>
-                          <TableCell className="text-right font-mono text-[11px] text-zinc-500">
+                          <TableCell className="text-right font-mono text-[11px] text-muted-foreground">
                             {h.end_time
                               ? new Date(h.end_time).toLocaleTimeString(
                                   lang === "id" ? "id-ID" : "en-US"
@@ -1957,7 +1973,7 @@ export default function AyamCounterPage() {
                                 e.stopPropagation();
                                 setDeleteTarget(h);
                               }}
-                              className="h-8 w-8 text-zinc-600 opacity-0 transition-all hover:bg-red-500/15 hover:text-red-400 focus-visible:opacity-100 group-hover:opacity-100"
+                              className="h-8 w-8 text-muted-foreground opacity-0 transition-all hover:bg-red-500/15 hover:text-red-400 focus-visible:opacity-100 group-hover:opacity-100"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
@@ -2005,16 +2021,16 @@ export default function AyamCounterPage() {
           if (!o) setDeleteTarget(null);
         }}
       >
-        <AlertDialogContent className="border-zinc-800 bg-zinc-950 text-zinc-100">
+        <AlertDialogContent className="border-border bg-background text-foreground">
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               <Trash2 className="h-4 w-4 text-red-400" />
               {t.hapusSesi}
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-zinc-400">
+            <AlertDialogDescription className="text-muted-foreground">
               {t.hapusSesiDesc}
               {deleteTarget ? (
-                <span className="mt-2 block rounded-md bg-zinc-900 p-2 font-mono text-xs text-zinc-300">
+                <span className="mt-2 block rounded-md bg-card p-2 font-mono text-xs text-foreground">
                   #{deleteTarget.id} — {deleteTarget.asal_ayam} ({deleteTarget.tanggal}) ·{" "}
                   {deleteTarget.total_count} {t.totalAyam.toLowerCase()}
                 </span>
@@ -2024,7 +2040,7 @@ export default function AyamCounterPage() {
           <AlertDialogFooter>
             <AlertDialogCancel
               disabled={deleteBusy}
-              className="border-zinc-800 bg-transparent text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100"
+              className="border-border bg-transparent text-foreground hover:bg-card hover:text-foreground"
             >
               {t.batalkan}
             </AlertDialogCancel>
@@ -2038,7 +2054,7 @@ export default function AyamCounterPage() {
             >
               {deleteBusy ? (
                 <>
-                  <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   {t.menghapus}
                 </>
               ) : (
@@ -2051,7 +2067,7 @@ export default function AyamCounterPage() {
 
       {/* ================= DIALOG TARGET HARIAN (ronde 8) ================= */}
       <Dialog open={targetOpen} onOpenChange={setTargetOpen}>
-        <DialogContent className="border-zinc-800 bg-zinc-950 text-zinc-100 sm:max-w-sm">
+        <DialogContent className="border-border bg-background text-foreground sm:max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/15 text-amber-400">
@@ -2069,7 +2085,7 @@ export default function AyamCounterPage() {
             className="space-y-3"
           >
             <div className="space-y-1.5">
-              <Label htmlFor="target-input" className="text-xs text-zinc-400">
+              <Label htmlFor="target-input" className="text-xs text-muted-foreground">
                 {t.targetLabel}
               </Label>
               <Input
@@ -2080,9 +2096,9 @@ export default function AyamCounterPage() {
                 value={targetInput}
                 onChange={(e) => setTargetInput(e.target.value.replace(/[^0-9]/g, ""))}
                 disabled={targetBusy}
-                className="border-zinc-800 bg-zinc-900 font-mono tabular-nums text-zinc-100 placeholder:text-zinc-600 focus-visible:ring-amber-500/40"
+                className="border-border bg-card font-mono tabular-nums text-foreground placeholder:text-muted-foreground focus-visible:ring-amber-500/40"
               />
-              <p className="text-[11px] text-zinc-600">
+              <p className="text-[11px] text-muted-foreground">
                 0 = {t.targetTanpa} · maks 1.000.000
               </p>
             </div>
@@ -2093,7 +2109,7 @@ export default function AyamCounterPage() {
                 size="sm"
                 disabled={targetBusy}
                 onClick={() => setTargetOpen(false)}
-                className="border-zinc-800 bg-transparent text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100"
+                className="border-border bg-transparent text-foreground hover:bg-card hover:text-foreground"
               >
                 {t.batalkan}
               </Button>
@@ -2105,7 +2121,7 @@ export default function AyamCounterPage() {
               >
                 {targetBusy ? (
                   <>
-                    <div className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border-2 border-zinc-900/40 border-t-zinc-900" />
+                    <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
                     {t.logMemuat}
                   </>
                 ) : (
@@ -2118,13 +2134,13 @@ export default function AyamCounterPage() {
       </Dialog>
 
       {/* ================= FOOTER (sticky bottom) ================= */}
-      <footer className="relative z-10 mt-auto border-t border-zinc-800 bg-zinc-950 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] pt-4">
-        <div className="mx-auto flex w-full max-w-7xl flex-col items-center justify-between gap-2 px-4 text-xs text-zinc-600 sm:flex-row sm:px-6">
+      <footer className="relative z-10 mt-auto border-t border-border bg-background pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] pt-4">
+        <div className="mx-auto flex w-full max-w-7xl flex-col items-center justify-between gap-2 px-4 text-xs text-muted-foreground sm:flex-row sm:px-6">
           <p className="flex items-center gap-1.5">
             <Bird className="h-3.5 w-3.5 text-amber-500/70" />
             {t.footerText}
           </p>
-          <p className="flex items-center gap-2 font-mono text-[10px] text-zinc-700">
+          <p className="flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
             <span className="hidden h-1 w-1 rounded-full bg-zinc-700 sm:inline-block" />
             {t.footerHint}
           </p>
