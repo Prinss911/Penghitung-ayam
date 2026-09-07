@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Ayam Counter Pro — Sistem Deteksi & Penghitungan Ayam Real-Time",
+  title: "Ayam Counter Pro | Operations Dashboard",
   description:
     "Dashboard penghitungan ayam real-time berbasis YOLOv8, Flask, dan Next.js. Deteksi shackle, penghitungan otomatis, dan ekspor Excel.",
   keywords: [
@@ -58,7 +58,7 @@ export default function RootLayout({
             agar pengguna EN tidak mendapat lang="id" sebelum hydrate. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var l=localStorage.getItem('ayam-theme')==='light';var c=document.documentElement.classList;if(l){c.add('light');c.remove('dark')}else{c.add('dark');c.remove('light')}var g=localStorage.getItem('ayam-lang');document.documentElement.lang=g==='en'?'en':'id'}catch(e){document.documentElement.classList.add('dark');document.documentElement.lang='id'}`,
+            __html: `try{var l=localStorage.getItem('ayam-theme')!=='dark';var c=document.documentElement.classList;if(l){c.add('light');c.remove('dark')}else{c.add('dark');c.remove('light')}var g=localStorage.getItem('ayam-lang');document.documentElement.lang=g==='en'?'en':'id'}catch(e){document.documentElement.classList.add('dark');document.documentElement.lang='id'}`,
           }}
         />
       </head>

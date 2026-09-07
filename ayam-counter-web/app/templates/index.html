@@ -1,287 +1,180 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="id">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ayam Counter Web - Live Detection</title>
+    <meta name="theme-color" content="#f4f7fb">
+    <title>Ayam Counter | Operations Dashboard</title>
     <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: #333;
+        :root {
+            --canvas: #f4f7fb;
+            --surface: #ffffff;
+            --surface-muted: #f8fafc;
+            --ink: #152238;
+            --muted: #64748b;
+            --line: #e2e8f0;
+            --brand: #2563eb;
+            --brand-dark: #1d4ed8;
+            --success: #16805b;
+            --warning: #b7791f;
+            --danger: #c2413a;
+            --radius: 14px;
+            --shadow: 0 8px 24px rgba(15, 23, 42, .05);
         }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-            overflow: hidden;
-        }
-        header {
-            background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
-            color: white;
-            padding: 20px;
-            text-align: center;
-        }
-        h1 { margin: 0; font-size: 2.5em; }
-        .subtitle { opacity: 0.9; margin-top: 5px; }
-        
-        .main-content {
-            display: grid;
-            grid-template-columns: 2fr 1fr;
-            gap: 20px;
-            padding: 20px;
-        }
-        .video-container {
-            background: #000;
-            border-radius: 8px;
-            overflow: hidden;
-            position: relative;
-        }
-        #webcam-video {
-            width: 100%;
-            height: auto;
-            display: block;
-        }
-        .stats-panel {
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 20px;
-            border: 1px solid #dee2e6;
-        }
-        .stat-box {
-            background: white;
-            padding: 15px;
-            border-radius: 6px;
-            margin-bottom: 15px;
-            border-left: 4px solid #3498db;
-        }
-        .stat-label { font-size: 0.9em; color: #666; margin-bottom: 5px; }
-        .stat-value { font-size: 1.8em; font-weight: bold; color: #2c3e50; }
-        .hardware-info {
-            background: #e3f2fd;
-            padding: 15px;
-            border-radius: 6px;
-            margin: 15px 0;
-            border: 1px solid #bbdefb;
-        }
-        .hardware-title { font-weight: bold; color: #1565c0; margin-bottom: 10px; }
-        
-        button {
-            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
-            color: white;
-            border: none;
-            padding: 12px 30px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 1.1em;
-            font-weight: bold;
-            transition: all 0.3s ease;
-        }
-        button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(52,152,219,0.4);
-        }
-        button:active { transform: translateY(0); }
-        
-        .status-indicator {
-            display: inline-block;
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            margin-right: 8px;
-        }
-        .status-ok { background: #2ecc71; }
-        .status-warning { background: #f39c12; }
-        .status-error { background: #e74c3c; }
-        
-        footer {
-            text-align: center;
-            padding: 15px;
-            background: #f8f9fa;
-            color: #666;
-            border-top: 1px solid #dee2e6;
-        }
+        * { box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body { margin: 0; background: var(--canvas); color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.5; }
+        button, a { font: inherit; }
+        button { cursor: pointer; }
+        button:focus-visible, a:focus-visible { outline: 3px solid rgba(37, 99, 235, .3); outline-offset: 3px; }
+        .app-shell { min-height: 100vh; display: flex; }
+        .sidebar { width: 248px; flex: 0 0 248px; padding: 24px 16px; background: #10213b; color: #dbe7f7; display: flex; flex-direction: column; }
+        .brand { display: flex; align-items: center; gap: 12px; padding: 4px 12px 28px; color: #fff; }
+        .brand-mark { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; background: #2f6feb; color: #fff; font-weight: 800; letter-spacing: -.04em; }
+        .brand strong { display: block; font-size: 15px; letter-spacing: -.02em; }
+        .brand span { display: block; margin-top: 2px; color: #9fb1cb; font-size: 11px; }
+        .nav-label { padding: 0 12px 8px; color: #8194b0; font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+        .nav { display: grid; gap: 4px; }
+        .nav a { display: flex; align-items: center; gap: 11px; padding: 10px 12px; border-radius: 8px; color: #aebfd7; text-decoration: none; font-size: 13px; transition: background .2s, color .2s; }
+        .nav a:hover, .nav a[aria-current="page"] { background: rgba(255,255,255,.1); color: #fff; }
+        .nav-icon { width: 17px; text-align: center; color: #91a7c7; font-size: 14px; }
+        .nav a[aria-current="page"] .nav-icon { color: #77a7ff; }
+        .sidebar-footer { margin-top: auto; padding: 16px 12px 0; border-top: 1px solid rgba(255,255,255,.1); color: #91a2bb; font-size: 11px; }
+        .workspace { min-width: 0; flex: 1; }
+        .topbar { height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 32px; background: var(--surface); border-bottom: 1px solid var(--line); }
+        .breadcrumb { color: var(--muted); font-size: 12px; }
+        .breadcrumb strong { color: var(--ink); font-weight: 650; }
+        .top-actions { display: flex; align-items: center; gap: 16px; }
+        .connection { display: inline-flex; align-items: center; gap: 7px; color: var(--success); font-size: 12px; font-weight: 650; }
+        .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+        .user { display: flex; align-items: center; gap: 9px; padding-left: 16px; border-left: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+        .avatar { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: #dbeafe; color: #1d4ed8; font-weight: 750; }
+        main { max-width: 1440px; margin: 0 auto; padding: 32px; }
+        .page-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; margin-bottom: 26px; }
+        .eyebrow { margin: 0 0 7px; color: var(--brand); font-size: 11px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
+        h1, h2, h3, p { margin-top: 0; }
+        h1 { margin-bottom: 6px; font-size: clamp(24px, 3vw, 32px); letter-spacing: -.04em; line-height: 1.15; }
+        .page-heading p { margin-bottom: 0; color: var(--muted); font-size: 13px; }
+        .date-label { color: var(--muted); font-size: 12px; text-align: right; }
+        .kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 22px; }
+        .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+        .kpi { padding: 18px 20px; }
+        .kpi-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 12px; }
+        .kpi-value { margin: 14px 0 5px; font-size: 28px; font-weight: 750; letter-spacing: -.04em; }
+        .kpi-note { color: var(--muted); font-size: 11px; }
+        .kpi-badge { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; background: #eff6ff; color: var(--brand); font-weight: 800; }
+        .content-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(300px, .75fr); gap: 20px; align-items: start; }
+        .section-card { overflow: hidden; }
+        .card-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--line); }
+        .card-header h2 { margin: 0; font-size: 14px; letter-spacing: -.01em; }
+        .card-header p { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
+        .live-pill { display: inline-flex; align-items: center; gap: 6px; color: var(--success); font-size: 11px; font-weight: 700; }
+        .video-frame { position: relative; min-height: 340px; display: grid; place-items: center; background: #0b1424; overflow: hidden; }
+        #webcam-video { width: 100%; height: auto; min-height: 340px; max-height: 520px; display: block; object-fit: cover; }
+        .video-overlay { position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: space-between; padding: 16px; pointer-events: none; background: linear-gradient(transparent 65%, rgba(7, 16, 30, .7)); color: #fff; }
+        .video-overlay span { font-size: 11px; }
+        .video-overlay strong { display: block; font-size: 12px; }
+        .video-warning { position: absolute; inset: 0; display: none; place-items: center; padding: 24px; color: #dbe7f7; text-align: center; background: rgba(11,20,36,.88); }
+        .video-warning strong { display: block; margin-bottom: 4px; font-size: 14px; }
+        .video-warning span { color: #9fb1cb; font-size: 12px; }
+        .session-panel { padding: 20px; }
+        .session-state { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+        .session-state small, .metric-label { color: var(--muted); font-size: 11px; }
+        .session-state strong { display: block; margin-top: 3px; font-size: 17px; }
+        .status { display: inline-flex; align-items: center; gap: 6px; color: var(--success); font-size: 11px; font-weight: 700; }
+        .session-count { padding: 24px 0; text-align: center; }
+        .session-count small { color: var(--muted); font-size: 11px; }
+        .session-count strong { display: block; margin: 5px 0 0; color: var(--brand); font-size: 52px; letter-spacing: -.07em; line-height: 1; }
+        .metric-list { display: grid; gap: 12px; }
+        .metric-row { display: flex; justify-content: space-between; gap: 16px; color: var(--muted); font-size: 12px; }
+        .metric-row strong { color: var(--ink); font-weight: 700; }
+        .progress { height: 6px; margin-top: 7px; overflow: hidden; border-radius: 99px; background: #e9eef5; }
+        .progress span { display: block; width: 0%; height: 100%; border-radius: inherit; background: var(--brand); transition: width .3s ease; }
+        .action-row { display: flex; gap: 8px; margin-top: 22px; }
+        .btn { min-height: 38px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font-size: 12px; font-weight: 700; transition: background .2s, border-color .2s, color .2s; }
+        .btn:hover { border-color: #b8c6d9; background: var(--surface-muted); }
+        .btn-primary { flex: 1; border-color: var(--brand); background: var(--brand); color: #fff; }
+        .btn-primary:hover { border-color: var(--brand-dark); background: var(--brand-dark); }
+        .btn-danger { color: var(--danger); }
+        .btn:disabled { cursor: wait; opacity: .55; }
+        .lower-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(300px, .75fr); gap: 20px; margin-top: 20px; }
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; min-width: 560px; }
+        th, td { padding: 13px 20px; border-bottom: 1px solid var(--line); text-align: left; font-size: 12px; white-space: nowrap; }
+        th { color: var(--muted); background: var(--surface-muted); font-size: 10px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+        td { color: #334155; }
+        tr:last-child td { border-bottom: 0; }
+        .empty-state { padding: 30px 20px; color: var(--muted); text-align: center; font-size: 12px; }
+        .health-list { padding: 4px 20px 12px; }
+        .health-row { display: flex; justify-content: space-between; gap: 16px; padding: 13px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+        .health-row:last-child { border-bottom: 0; }
+        .health-row span { color: var(--muted); }
+        .health-row strong { max-width: 60%; overflow: hidden; color: var(--ink); font-size: 11px; font-weight: 700; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+        .ok { color: var(--success) !important; }
+        .muted { color: var(--muted) !important; }
+        .error { color: var(--danger) !important; }
+        .exports { padding: 8px 20px 16px; }
+        .export-item { display: flex; justify-content: space-between; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--line); font-size: 11px; }
+        .export-item:last-child { border-bottom: 0; }
+        .export-item a { color: var(--brand); font-weight: 700; text-decoration: none; }
+        .export-item a:hover { text-decoration: underline; }
+        .footer { padding: 24px 0 4px; color: var(--muted); font-size: 11px; }
+        @media (max-width: 1100px) { .sidebar { width: 210px; flex-basis: 210px; } .topbar, main { padding-left: 24px; padding-right: 24px; } .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .content-grid, .lower-grid { grid-template-columns: 1fr; } }
+        @media (max-width: 700px) { .app-shell { display: block; } .sidebar { width: 100%; padding: 14px 16px; } .brand { padding: 4px 0 14px; } .nav-label, .sidebar-footer { display: none; } .nav { display: flex; overflow-x: auto; gap: 4px; } .nav a { flex: 0 0 auto; } .topbar { height: 60px; padding: 0 16px; } .breadcrumb { display: none; } .top-actions { width: 100%; justify-content: space-between; } .user { padding-left: 0; border-left: 0; } main { padding: 24px 16px; } .page-heading { display: block; } .date-label { margin-top: 14px; text-align: left; } .kpi-grid { gap: 10px; } .kpi { padding: 15px; } .kpi-value { font-size: 23px; } .video-frame, #webcam-video { min-height: 230px; } }
+        @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; } }
     </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>🐔 Ayam Counter Web</h1>
-            <div class="subtitle">Real-time Chicken Detection & Counting System</div>
-        </header>
-        
-        <div class="main-content">
-            <!-- Left Side: Video Feed -->
-            <div>
-                <div class="video-container">
-                    <!-- Video stream from Flask server -->
-                    <img id="webcam-video" src="/video_feed" alt="Live Webcam Feed" style="width: 100%; height: auto;">
-                    <div id="no-cam-warning" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; text-align: center; display: none;">
-                        <h3>No Camera Signal</h3>
-                        <p>Please check your camera connection</p>
-                    </div>
-                </div>
+<div class="app-shell">
+    <aside class="sidebar" aria-label="Navigasi utama">
+        <div class="brand"><div class="brand-mark">AC</div><div><strong>Ayam Counter</strong><span>Operations Platform</span></div></div>
+        <div class="nav-label">Workspace</div>
+        <nav class="nav">
+            <a href="#overview" aria-current="page"><span class="nav-icon">▦</span> Overview</a>
+            <a href="#monitoring"><span class="nav-icon">◉</span> Monitoring</a>
+            <a href="#history"><span class="nav-icon">▤</span> Session History</a>
+            <a href="#system"><span class="nav-icon">⚙</span> System Health</a>
+        </nav>
+        <div class="sidebar-footer">Production environment<br><strong>v2.0 Operations Console</strong></div>
+    </aside>
+    <div class="workspace">
+        <header class="topbar"><div class="breadcrumb">Workspace / <strong>Overview</strong></div><div class="top-actions"><div class="connection" id="connection-status"><span class="dot"></span> Connecting</div><div class="user"><div class="avatar">OP</div><span>Operator</span></div></div></header>
+        <main id="overview">
+            <div class="page-heading"><div><p class="eyebrow">Operations overview</p><h1>Production monitoring</h1><p>Monitor counting activity and device readiness from one workspace.</p></div><div class="date-label">Today<br><strong id="current-date">—</strong></div></div>
+            <section class="kpi-grid" aria-label="Key performance indicators">
+                <article class="card kpi"><div class="kpi-top"><span>Counted today</span><span class="kpi-badge">01</span></div><div class="kpi-value" id="today-count">{{ stats.total_count if stats and stats.total_count is defined else 0 }}</div><div class="kpi-note">Total hasil deteksi hari ini</div></article>
+                <article class="card kpi"><div class="kpi-top"><span>Active session</span><span class="kpi-badge">02</span></div><div class="kpi-value" id="session-count-kpi">0</div><div class="kpi-note">Current production session</div></article>
+                <article class="card kpi"><div class="kpi-top"><span>Detection speed</span><span class="kpi-badge">03</span></div><div class="kpi-value"><span id="speed-kpi">0</span> <small style="font-size:13px;font-weight:600">items/min</small></div><div class="kpi-note">Live processing throughput</div></article>
+                <article class="card kpi"><div class="kpi-top"><span>System status</span><span class="kpi-badge">04</span></div><div class="kpi-value" style="font-size:20px" id="system-status">Standby</div><div class="kpi-note" id="last-updated">Waiting for device data</div></article>
+            </section>
+            <div class="content-grid" id="monitoring">
+                <section class="card section-card"><div class="card-header"><div><h2>Live monitoring</h2><p>Camera stream and detection activity</p></div><div class="live-pill"><span class="dot"></span><span id="stream-label">Stream ready</span></div></div><div class="video-frame"><img id="webcam-video" src="/video_feed" alt="Live camera feed for chicken counting"><div class="video-overlay"><div><span>CAMERA SOURCE</span><strong id="camera-source">Loading...</strong></div><div><span id="stream-clock">—</span></div></div><div class="video-warning" id="no-cam-warning"><div><strong>Camera signal unavailable</strong><span>Check the configured camera source and connection.</span></div></div></div></section>
+                <aside class="card section-card"><div class="card-header"><div><h2>Session control</h2><p>Manage the active counting run</p></div><span class="status" id="session-status"><span class="dot"></span> Standby</span></div><div class="session-panel"><div class="session-state"><div><small>Current run</small><strong id="run-label">No active session</strong></div><div class="muted" id="run-time">—</div></div><div class="session-count"><small>Detected in session</small><strong id="chicken-count">0</strong></div><div class="metric-list"><div class="metric-row"><span>Detected tracks</span><strong id="tracks-count">0</strong></div><div class="metric-row"><span>Target progress</span><strong id="target-label">0 / 0</strong></div></div><div class="progress"><span id="target-progress"></span></div><div class="action-row"><button class="btn btn-primary" id="start-btn" type="button">Start session</button><button class="btn btn-danger" id="stop-btn" type="button" disabled>Stop</button></div></div></aside>
             </div>
-            
-            <!-- Right Side: Statistics -->
-            <div>
-                <div class="hardware-info">
-                    <div class="hardware-title">🖥️ Hardware Profile</div>
-                    <div><strong>Backend:</strong> <span id="backend-info">CUDA (RTX 3060 Ti)</span></div>
-                    <div><strong>VRAM:</strong> 8.6 GB</div>
-                    <div><strong>Precision:</strong> FP16</div>
-                    <div><strong>Status:</strong> <span class="status-indicator status-ok"></span>Active</div>
-                </div>
-                
-                <div class="stats-panel">
-                    <h2 style="margin-top: 0;">📊 Live Statistics</h2>
-                    
-                    <div class="stat-box">
-                        <div class="stat-label">Chickens Detected</div>
-                        <div class="stat-value" id="chicken-count">-</div>
-                    </div>
-                    
-                    <div class="stat-box">
-                        <div class="stat-label">Empty Shackles</div>
-                        <div class="stat-value" id="empty-count">-</div>
-                    </div>
-                    
-                    <div class="stat-box">
-                        <div class="stat-label">Frame Rate</div>
-                        <div class="stat-value" id="fps-counter">--</div>
-                    </div>
-                    
-                    <div class="stat-box">
-                        <div class="stat-label">Total Processing Time</div>
-                        <div class="stat-value" id="total-time">0s</div>
-                    </div>
-                    
-                    <div class="stat-box">
-                        <div class="stat-label">System Status</div>
-                        <div class="stat-value">
-                            <span class="status-indicator status-ok"></span>
-                            Running
-                        </div>
-                    </div>
-                    
-                    <button id="export-btn" onclick="exportToExcel()">
-                        📄 Export to Excel
-                    </button>
-                </div>
+            <div class="lower-grid" id="history">
+                <section class="card section-card"><div class="card-header"><div><h2>Recent sessions</h2><p>Operational activity from the latest counting runs</p></div><span class="muted" style="font-size:11px" id="history-count">{{ history|length if history else 0 }} records</span></div><div class="table-wrap"><table><thead><tr><th>Session</th><th>Date</th><th>Count</th><th>Duration</th><th>Status</th></tr></thead><tbody id="history-body">{% if history %}{% for item in history[:8] %}<tr><td>#{{ item.id if item.id is defined else loop.index }}</td><td>{{ item.start_time if item.start_time is defined else '—' }}</td><td>{{ item.total_count if item.total_count is defined else item.count if item.count is defined else 0 }}</td><td>{{ item.duration if item.duration is defined else '—' }}</td><td><span class="status ok"><span class="dot"></span> Completed</span></td></tr>{% endfor %}{% else %}<tr><td colspan="5"><div class="empty-state">No session history available yet.</div></td></tr>{% endif %}</tbody></table></div></section>
+                <div style="display:grid;gap:20px;align-content:start"><section class="card section-card" id="system"><div class="card-header"><div><h2>System health</h2><p>Live device and model readiness</p></div><span class="status" id="health-status"><span class="dot"></span> Checking</span></div><div class="health-list"><div class="health-row"><span>Backend</span><strong id="backend-info">—</strong></div><div class="health-row"><span>Device</span><strong id="device-info">—</strong></div><div class="health-row"><span>Model</span><strong id="model-info">—</strong></div><div class="health-row"><span>Camera</span><strong id="camera-info">—</strong></div><div class="health-row"><span>Resolution</span><strong id="resolution-info">—</strong></div></div></section><section class="card section-card"><div class="card-header"><div><h2>Exports</h2><p>Download generated reports</p></div></div><div class="exports" id="exports-list"><div class="empty-state">Loading exports...</div></div></section></div>
             </div>
-        </div>
-        
-        <footer>
-            <p>Ayam Counter Web v2.0.0 | Built with YOLO8 + CUDA Acceleration</p>
-        </footer>
+            <div class="footer">Ayam Counter Operations Platform · Secure internal workspace · <span id="footer-version">v2.0.0</span></div>
+        </main>
     </div>
-    
-    <script>
-        let statsInterval;
-        let apiUpdateInterval;
-        
-        const webcamVideo = document.getElementById('webcam-video');
-        const chickenCountEl = document.getElementById('chicken-count');
-        const emptyCountEl = document.getElementById('empty-count');
-        const fpsEl = document.getElementById('fps-counter');
-        const totalTimeEl = document.getElementById('total-time');
-        const warningEl = document.getElementById('no-cam-warning');
-        
-        // Check if video is loading (blank image)
-        function checkVideoLoad() {
-            const img = new Image();
-            img.src = '/video_feed';
-            img.onload = function() {
-                console.log('✓ Video feed loaded successfully');
-                warningEl.style.display = 'none';
-            };
-            img.onerror = function() {
-                console.warn('⚠ Video feed not available');
-                warningEl.style.display = 'block';
-            };
-        }
-        
-        // Update live statistics from API
-        async function fetchLiveStats() {
-            try {
-                const response = await fetch('/api/stats');
-                const data = await response.json();
-                
-                // Update counts
-                chickenCountEl.textContent = data.count || 0;
-                
-                // FPS estimation from current count changes
-                if (!isNaN(data.speed)) {
-                    fpsEl.textContent = Math.round(data.speed);
-                } else {
-                    fpsEl.textContent = '--';
-                }
-                
-                console.log('API Stats:', data);
-            } catch (error) {
-                console.error('Error fetching stats:', error);
-            }
-        }
-        
-        // Get Excel files for export
-        async function getExcelFiles() {
-            try {
-                const response = await fetch('/api/exports');
-                const files = await response.json();
-                
-                const select = document.getElementById('export-select');
-                if (!select) return;
-                
-                select.innerHTML = '<option value="">Select file...</option>';
-                files.forEach(file => {
-                    const option = document.createElement('option');
-                    option.value = file.name;
-                    option.textContent = file.name + ` (${file.size_kb} KB)`;
-                    select.appendChild(option);
-                });
-            } catch (error) {
-                console.error('Error loading exports:', error);
-            }
-        }
-        
-        // Start stats updates
-        statsInterval = setInterval(() => {
-            // Simple animation
-            let totalSeconds = parseInt(totalTimeEl.textContent) || 0;
-            totalTimeEl.textContent = totalSeconds + 1 + 's';
-            
-            // Show warning if no video
-            const img = document.getElementById('webcam-video');
-            if (img && img.src === window.location.href + '/video_feed') {
-                setTimeout(checkVideoLoad, 1000);
-            }
-        }, 1000);
-        
-        // Fetch live stats every 2 seconds
-        apiUpdateInterval = setInterval(fetchLiveStats, 2000);
-        
-        // Load Excel files
-        getExcelFiles();
-        
-        // Initialize on page load
-        window.addEventListener('load', () => {
-            console.log('Ayam Counter Web initialized!');
-            console.log('Hardware: RTX 3060 Ti with CUDA acceleration');
-            console.log('Status: Ready to detect chickens');
-            
-            // Try to load video feed
-            setTimeout(checkVideoLoad, 500);
-        });
-        
-        // Clean up on page unload
-        window.addEventListener('unload', () => {
-            clearInterval(statsInterval);
-            clearInterval(apiUpdateInterval);
-        });
-    </script>
+</div>
+<script>
+    const $ = (id) => document.getElementById(id);
+    const els = { video: $('webcam-video'), warning: $('no-cam-warning'), connection: $('connection-status'), systemStatus: $('system-status'), sessionStatus: $('session-status'), healthStatus: $('health-status'), start: $('start-btn'), stop: $('stop-btn') };
+    let statsTimer, deviceTimer, mounted = true;
+    const formatNumber = (value) => Number(value || 0).toLocaleString('id-ID');
+    const setStatus = (el, label, tone = 'ok') => { if (!el) return; el.className = `status ${tone}`; el.innerHTML = `<span class="dot"></span> ${label}`; };
+    const setText = (id, value) => { const node = $(id); if (node) node.textContent = value ?? '—'; };
+    const updateSession = (data) => { const active = Boolean(data.session_active); const count = Number(data.count || 0); setText('chicken-count', formatNumber(count)); setText('session-count-kpi', formatNumber(count)); setText('tracks-count', formatNumber(data.tracks || 0)); setText('speed-kpi', Math.round(Number(data.speed || 0))); setText('run-label', active ? 'Session in progress' : 'No active session'); setText('run-time', active ? 'Live' : '—'); setStatus(els.sessionStatus, active ? 'Running' : 'Standby', active ? 'ok' : 'muted'); els.start.disabled = active; els.stop.disabled = !active; const target = Number(data.target || 0); setText('target-label', `${formatNumber(count)} / ${formatNumber(target)}`); $('target-progress').style.width = target > 0 ? `${Math.min(100, count / target * 100)}%` : '0%'; setText('system-status', active ? 'Running' : 'Standby'); };
+    async function fetchStats() { try { const response = await fetch('/api/stats', { cache: 'no-store' }); if (!response.ok) throw new Error('stats'); const data = await response.json(); updateSession(data); setText('today-count', formatNumber(data.session_data?.daily_count ?? data.count ?? 0)); els.connection.className = 'connection'; els.connection.innerHTML = '<span class="dot"></span> Connected'; setText('last-updated', `Updated ${new Date().toLocaleTimeString('id-ID')}`); } catch (error) { els.connection.className = 'connection error'; els.connection.innerHTML = '<span class="dot"></span> Disconnected'; setText('last-updated', 'Unable to reach service'); } }
+    async function fetchDevice() { try { const response = await fetch('/api/device', { cache: 'no-store' }); if (!response.ok) throw new Error('device'); const data = await response.json(); setText('backend-info', data.backend || 'CPU'); setText('device-info', data.device || '—'); setText('model-info', data.model_loaded ? 'Loaded' : 'Not loaded'); setText('camera-info', data.camera_connected ? 'Connected' : 'Unavailable'); setText('camera-source', data.camera_source || 'Configured source'); setText('resolution-info', data.camera_resolution || '—'); setStatus(els.healthStatus, data.camera_connected && data.model_loaded ? 'Operational' : 'Attention', data.camera_connected && data.model_loaded ? 'ok' : 'error'); $('stream-label').textContent = data.camera_connected ? 'Stream live' : 'Stream unavailable'; els.warning.style.display = data.camera_connected ? 'none' : 'grid'; } catch (error) { setStatus(els.healthStatus, 'Unavailable', 'error'); els.warning.style.display = 'grid'; } }
+    async function fetchExports() { try { const response = await fetch('/api/exports', { cache: 'no-store' }); const files = await response.json(); const list = $('exports-list'); if (!files.length) { list.innerHTML = '<div class="empty-state">No exports generated yet.</div>'; return; } list.innerHTML = files.slice(0, 4).map(file => `<div class="export-item"><span>${file.name}<br><span class="muted">${file.size_kb} KB · ${file.modified_str || ''}</span></span><a href="/api/download/${encodeURIComponent(file.name)}" download>Download</a></div>`).join(''); } catch (error) { $('exports-list').innerHTML = '<div class="empty-state error">Exports unavailable.</div>'; } }
+    async function toggleSession(action) { const button = action === 'start' ? els.start : els.stop; button.disabled = true; button.textContent = action === 'start' ? 'Starting...' : 'Stopping...'; try { const response = await fetch(`/api/session/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); if (!response.ok) throw new Error(action); await fetchStats(); } catch (error) { setText('last-updated', 'Session action failed'); } finally { button.textContent = action === 'start' ? 'Start session' : 'Stop'; await fetchStats(); } }
+    els.start.addEventListener('click', () => toggleSession('start')); els.stop.addEventListener('click', () => toggleSession('stop'));
+    $('current-date').textContent = new Intl.DateTimeFormat('id-ID', { dateStyle: 'long' }).format(new Date()); $('stream-clock').textContent = new Date().toLocaleTimeString('id-ID'); setInterval(() => { if (mounted) $('stream-clock').textContent = new Date().toLocaleTimeString('id-ID'); }, 1000);
+    fetchStats(); fetchDevice(); fetchExports(); statsTimer = setInterval(fetchStats, 2500); deviceTimer = setInterval(fetchDevice, 5000); window.addEventListener('beforeunload', () => { mounted = false; clearInterval(statsTimer); clearInterval(deviceTimer); });
+    els.video.addEventListener('error', () => { $('stream-label').textContent = 'Stream unavailable'; els.warning.style.display = 'grid'; });
+</script>
 </body>
 </html>
