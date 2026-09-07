@@ -112,6 +112,16 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -208,6 +218,59 @@ html:not(.light) {
    mengalahkan .text-zinc-950 (0,1,0). */
 html.light .bg-amber-500 {
   color: #451a03;
+}
+
+/* Enterprise dashboard surface: quiet hierarchy, restrained accents, and crisp data density. */
+html.light body {
+  background: #f5f7fa;
+}
+html.light .ayam-bg-layer {
+  background: linear-gradient(to bottom, rgba(15, 23, 42, 0.035) 1px, transparent 1px), linear-gradient(to right, rgba(15, 23, 42, 0.035) 1px, transparent 1px);
+  background-size: 32px 32px;
+  opacity: .55;
+}
+html.light .rounded-2xl,
+html.light .rounded-xl,
+html.light .rounded-lg {
+  border-radius: .75rem;
+}
+html.light .shadow-xl,
+html.light .shadow-2xl {
+  box-shadow: 0 10px 26px rgba(15, 23, 42, .07);
+}
+html.light .bg-gradient-to-r,
+html.light .bg-gradient-to-b,
+html.light .bg-gradient-to-br {
+  background-image: none;
+}
+html.light .border-zinc-800\/80,
+html.light .border-zinc-800\/60,
+html.light .border-zinc-700\/60 {
+  border-color: #e2e8f0;
+}
+html.light .text-zinc-100,
+html.light .text-zinc-200 {
+  color: #172033;
+}
+html.light .text-zinc-400,
+html.light .text-zinc-500 {
+  color: #64748b;
+}
+html.light .bg-zinc-950\/80,
+html.light .bg-zinc-950\/60,
+html.light .bg-zinc-900\/60,
+html.light .bg-zinc-900\/50 {
+  background-color: rgba(255, 255, 255, .92);
+}
+html.light .bg-zinc-950 {
+  background-color: #f5f7fa;
+}
+@media (prefers-reduced-motion: reduce) {
+  html.light *, html.light *::before, html.light *::after {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 html.light .hover\:bg-amber-500:hover {
   color: #451a03;

@@ -552,7 +552,7 @@ def device_info():
         "confidence": Config.CONFIDENCE_THRESHOLD,
         "camera_source": str(Config.CAMERA_SOURCE),
         "camera_connected": camera_connected,
-        "camera_error": None,
+        "camera_error": None if camera_connected else "Belum ada frame dari sumber kamera",
         "camera_fps": Config.CAMERA_FPS,
         "camera_resolution": f"{Config.CAMERA_WIDTH}x{Config.CAMERA_HEIGHT}",
         "count_line_x": Config.COUNT_LINE_X,
@@ -615,7 +615,16 @@ def session_status():
 
 @app.route("/health")
 def health():
-    return jsonify({"status": "ok"})
+    with frame_lock:
+        camera_ready = latest_frame is not None
+    model_ready = getattr(detector, "model", None) is not None
+    status = "ok" if model_ready and camera_ready else "degraded"
+    return jsonify({
+        "status": status,
+        "checks": {"model": model_ready, "camera": camera_ready, "database": True},
+        "session_active": session_active,
+        "timestamp": time.time(),
+    }), (200 if status == "ok" else 503)
 
 @app.route("/api/session/start", methods=["POST"])
 def session_start_http():
@@ -1053,7 +1062,19 @@ def _do_start_session(data):
     global current_tracks, session_start_ts, timeline_points, last_session
 
     if getattr(detector, "model", None) is None:
-        return {"error": "model_not_loaded"}, 503
+        return {"error": "model_not_loaded", "message": "Model deteksi belum siap"}, 503
+    if session_active:
+        return {"error": "session_already_active", "message": "Sesi penghitungan masih aktif"}, 409
+
+    required = ("asal_ayam", "tanggal", "jam")
+    missing = [key for key in required if not str(data.get(key, "")).strip()]
+    if missing:
+        return {"error": "validation_error", "fields": missing, "message": "Lengkapi data sesi terlebih dahulu"}, 422
+    try:
+        datetime.strptime(str(data["tanggal"]), "%Y-%m-%d")
+        datetime.strptime(str(data["jam"]), "%H:%M")
+    except (TypeError, ValueError):
+        return {"error": "validation_error", "message": "Format tanggal atau jam tidak valid"}, 422
 
     # Reset counter
     counter.reset()

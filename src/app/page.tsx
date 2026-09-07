@@ -990,8 +990,28 @@ export default function AyamCounterPage() {
       </header>
 
       {/* ================= MAIN ================= */}
-      <main className="relative z-10 mx-auto w-full max-w-7xl flex-1 px-4 py-5 sm:px-6 sm:py-6">
-        {/* ---- Stat cards ---- */}
+      <div className="relative z-10 mx-auto flex w-full max-w-[1440px] flex-1">
+        <aside className="hidden w-56 shrink-0 border-r border-border px-4 py-6 lg:block">
+          <nav aria-label="Navigasi utama" className="sticky top-24 space-y-1">
+            <p className="mb-3 px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Workspace</p>
+            <a href="#overview" className="flex items-center gap-3 rounded-lg bg-primary/10 px-3 py-2.5 text-sm font-semibold text-primary">Overview</a>
+            <a href="#session" className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Sesi Penghitungan</a>
+            <a href="#history" className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Riwayat & Laporan</a>
+            <a href="#system" className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Administrasi</a>
+            <div className="mt-8 rounded-xl border border-border bg-card p-3 text-xs text-muted-foreground">
+              <p className="font-semibold text-foreground">Mode operator</p>
+              <p className="mt-1 leading-relaxed">Gunakan satu sesi aktif untuk menjaga data tetap akurat.</p>
+            </div>
+          </nav>
+        </aside>
+        <main id="overview" className="relative mx-auto w-full max-w-7xl flex-1 scroll-mt-24 px-4 py-5 sm:px-6 sm:py-6">
+          <nav aria-label="Navigasi cepat" className="mb-4 flex gap-2 overflow-x-auto pb-1 lg:hidden">
+            <a href="#overview" className="shrink-0 rounded-full bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Overview</a>
+            <a href="#session" className="shrink-0 rounded-full border border-border bg-card px-3 py-2 text-xs font-medium text-muted-foreground">Sesi</a>
+            <a href="#history" className="shrink-0 rounded-full border border-border bg-card px-3 py-2 text-xs font-medium text-muted-foreground">Riwayat</a>
+            <a href="#system" className="shrink-0 rounded-full border border-border bg-card px-3 py-2 text-xs font-medium text-muted-foreground">Administrasi</a>
+          </nav>
+          {/* ---- Stat cards ---- */}
         <motion.section
           aria-label="statistics"
           initial={fadeUp.initial}
@@ -1181,7 +1201,7 @@ export default function AyamCounterPage() {
           </Card>
 
           {/* ---------- Session control ---------- */}
-          <Card className="border-border bg-card/60">
+          <Card id="session" className="scroll-mt-24 border-border bg-card/60">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <Play className="h-4 w-4 text-amber-400" />
@@ -1218,7 +1238,7 @@ export default function AyamCounterPage() {
                   </p>
                 ) : null}
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="tgl" className="text-muted-foreground">
                     {t.tanggal}
@@ -1647,7 +1667,8 @@ export default function AyamCounterPage() {
 
         {/* ---- Hardware + Exports ---- */}
         <motion.section
-          className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2"
+          id="system"
+          className="mt-4 grid scroll-mt-24 grid-cols-1 gap-4 lg:grid-cols-2"
           initial={fadeUp.initial}
           animate={fadeUp.animate}
           transition={{ duration: 0.35, delay: 0.18 }}
@@ -1805,7 +1826,7 @@ export default function AyamCounterPage() {
           animate={fadeUp.animate}
           transition={{ duration: 0.35, delay: 0.24 }}
         >
-          <Card className="border-border bg-card/60">
+          <Card id="history" className="scroll-mt-24 border-border bg-card/60">
             <CardHeader className="pb-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -1823,7 +1844,7 @@ export default function AyamCounterPage() {
                       value={historySearch}
                       onChange={(e) => setHistorySearch(e.target.value)}
                       placeholder={t.cariRiwayat}
-                      className="h-9 w-44 border-border bg-background pl-8 text-xs text-foreground placeholder:text-muted-foreground focus-visible:ring-amber-500"
+                      className="h-9 w-full border-border bg-background pl-8 text-xs text-foreground placeholder:text-muted-foreground focus-visible:ring-amber-500 sm:w-44"
                     />
                   </div>
                   <Input
@@ -1831,7 +1852,7 @@ export default function AyamCounterPage() {
                     value={historyDate}
                     onChange={(e) => setHistoryDate(e.target.value)}
                     aria-label={t.filterTanggal}
-                    className="h-9 w-36 border-border bg-background text-xs text-foreground focus-visible:ring-amber-500"
+                    className="h-9 w-full border-border bg-background text-xs text-foreground focus-visible:ring-amber-500 sm:w-36"
                   />
                   {/* Laporan harian PDF (mengikuti filter tanggal / hari ini) */}
                   <a
@@ -1988,7 +2009,8 @@ export default function AyamCounterPage() {
             </CardContent>
           </Card>
         </motion.section>
-      </main>
+        </main>
+      </div>
 
       {/* ================= DIALOGS ================= */}
       <SessionDetailDialog
