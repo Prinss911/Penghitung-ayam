@@ -990,7 +990,21 @@ export default function AyamCounterPage() {
       </header>
 
       {/* ================= MAIN ================= */}
-      <main className="relative z-10 mx-auto w-full max-w-7xl flex-1 px-4 py-5 sm:px-6 sm:py-6">
+      <div className="relative z-10 mx-auto flex w-full max-w-[1440px] flex-1">
+        <aside className="hidden w-56 shrink-0 border-r border-border px-4 py-6 lg:block">
+          <nav aria-label="Navigasi utama" className="sticky top-24 space-y-1">
+            <p className="mb-3 px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Workspace</p>
+            <a href="#overview" className="flex items-center gap-3 rounded-lg bg-primary/10 px-3 py-2.5 text-sm font-semibold text-primary">Overview</a>
+            <a href="#session" className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Sesi Penghitungan</a>
+            <a href="#history" className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Riwayat & Laporan</a>
+            <a href="#system" className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Administrasi</a>
+            <div className="mt-8 rounded-xl border border-border bg-card p-3 text-xs text-muted-foreground">
+              <p className="font-semibold text-foreground">Mode operator</p>
+              <p className="mt-1 leading-relaxed">Gunakan satu sesi aktif untuk menjaga data tetap akurat.</p>
+            </div>
+          </nav>
+        </aside>
+        <main id="overview" className="relative mx-auto w-full max-w-7xl flex-1 px-4 py-5 sm:px-6 sm:py-6">
         {/* ---- Stat cards ---- */}
         <motion.section
           aria-label="statistics"
@@ -1988,7 +2002,8 @@ export default function AyamCounterPage() {
             </CardContent>
           </Card>
         </motion.section>
-      </main>
+        </main>
+      </div>
 
       {/* ================= DIALOGS ================= */}
       <SessionDetailDialog
