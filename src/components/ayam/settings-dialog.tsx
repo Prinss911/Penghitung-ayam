@@ -55,7 +55,9 @@ export function SettingsDialog({ t, onSaved }: SettingsDialogProps) {
   }, [t]);
 
   useEffect(() => {
-    if (open) load();
+    if (!open) return;
+    const id = setTimeout(() => void load(), 0);
+    return () => clearTimeout(id);
   }, [open, load]);
 
   const dirty =

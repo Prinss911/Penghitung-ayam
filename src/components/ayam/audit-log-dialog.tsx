@@ -180,7 +180,9 @@ export function AuditLogDialog({ t, lang }: { t: Dict; lang: "id" | "en" }) {
   }, [entries.length, filter, lang]);
 
   useEffect(() => {
-    if (open) void load();
+    if (!open) return;
+    const id = setTimeout(() => void load(), 0);
+    return () => clearTimeout(id);
   }, [open, load]);
 
   const handleClear = useCallback(async () => {

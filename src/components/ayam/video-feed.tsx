@@ -61,7 +61,9 @@ export function VideoFeed({
 
   // Overlay hilang saat frame pertama masuk lagi (status live) + failsafe 20 dtk
   useEffect(() => {
-    if (status === "live") setSwitching(false);
+    if (status !== "live") return;
+    const id = setTimeout(() => setSwitching(false), 0);
+    return () => clearTimeout(id);
   }, [status]);
   useEffect(() => {
     if (!switching) return;

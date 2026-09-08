@@ -40,13 +40,15 @@ export function RangeReportDialog({ t, lang }: { t: Dict; lang: string }) {
 
   // Default: 7 hari terakhir (client only)
   useEffect(() => {
-    if (open && !from && !to) {
+    if (!open || from || to) return;
+    const id = setTimeout(() => {
       const now = new Date();
       const prev = new Date(now);
       prev.setDate(now.getDate() - 6);
       setFrom(fmt(prev));
       setTo(fmt(now));
-    }
+    }, 0);
+    return () => clearTimeout(id);
   }, [open, from, to]);
 
   const applyPreset = useCallback((days: number) => {

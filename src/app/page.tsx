@@ -359,7 +359,9 @@ export default function AyamCounterPage() {
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem("ayam-lang");
-      if (saved === "id" || saved === "en") setLangState(saved);
+      if (saved === "id" || saved === "en") {
+        setTimeout(() => setLangState(saved), 0);
+      }
     } catch {
       /* abaikan */
     }
@@ -430,9 +432,12 @@ export default function AyamCounterPage() {
     }
   }, []);
   useEffect(() => {
-    void refreshTargetHistory();
+    const initial = setTimeout(() => void refreshTargetHistory(), 0);
     const iv = setInterval(() => void refreshTargetHistory(), 30_000);
-    return () => clearInterval(iv);
+    return () => {
+      clearTimeout(initial);
+      clearInterval(iv);
+    };
   }, [refreshTargetHistory]);
 
   // ----- PIN gate (aksi terproteksi) -----
@@ -486,11 +491,11 @@ export default function AyamCounterPage() {
   const [notifEnabled, setNotifEnabled] = useState(false);
   useEffect(() => {
     try {
-      setNotifEnabled(
+      const enabled =
         "Notification" in window &&
-          localStorage.getItem("ayam-notif") === "1" &&
-          Notification.permission === "granted"
-      );
+        localStorage.getItem("ayam-notif") === "1" &&
+        Notification.permission === "granted";
+      setTimeout(() => setNotifEnabled(enabled), 0);
     } catch {
       /* abaikan */
     }
@@ -531,8 +536,12 @@ export default function AyamCounterPage() {
   useEffect(() => {
     const now = new Date();
     const pad = (n: number) => String(n).padStart(2, "0");
-    setTanggal(`${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`);
-    setJam(`${pad(now.getHours())}:${pad(now.getMinutes())}`);
+    const nextTanggal = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    const nextJam = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    setTimeout(() => {
+      setTanggal(nextTanggal);
+      setJam(nextJam);
+    }, 0);
   }, []);
 
   const sessionActive = stats.session_active || stats.is_processing === true;

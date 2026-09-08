@@ -71,13 +71,17 @@ export function PinGateDialog({
 
   // Reset tiap kali dialog dibuka
   useEffect(() => {
-    if (open) {
+    if (!open) return;
+    const resetId = setTimeout(() => {
       setPin("");
       setError(false);
       setLockSecs(0);
-      const id = setTimeout(() => inputRef.current?.focus(), 80);
-      return () => clearTimeout(id);
-    }
+    }, 0);
+    const focusId = setTimeout(() => inputRef.current?.focus(), 80);
+    return () => {
+      clearTimeout(resetId);
+      clearTimeout(focusId);
+    };
   }, [open]);
 
   // Hitung mundur kunci rate-limit
@@ -241,7 +245,9 @@ export function PinManagerDialog({ t }: { t: Dict }) {
   }, []);
 
   useEffect(() => {
-    if (open) void refreshStatus();
+    if (!open) return;
+    const id = setTimeout(() => void refreshStatus(), 0);
+    return () => clearTimeout(id);
   }, [open, refreshStatus]);
 
   const save = useCallback(
