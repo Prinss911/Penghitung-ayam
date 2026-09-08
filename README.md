@@ -138,7 +138,11 @@ DETECTION_CONFIDENCE=0.25
 - Audit log setiap operator action (timestamp, action type, detail)
 - CSRF protection via Flask's default mechanisms
 - Input validation menggunakan Pydantic di backend & Zod di frontend
-- Rate limiting placeholder (can be implemented with Flask-Limiter)
+- Configurable CORS, request bounds, reconnect limits, and PIN lock settings
+- Liveness/readiness endpoints: `/health/live` and `/health/ready`
+- SQLite WAL/busy-timeout with additive query indexes and bounded history pagination
+- Dashboard polling pauses while hidden/offline and prevents overlapping requests
+- Operational rollout and rollback guidance: `docs/optimization-operations.md`
 
 ## 📊 Database Schema
 

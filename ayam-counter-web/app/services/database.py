@@ -1,9 +1,27 @@
 # modules/database.py
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 
 
 class Database:
+    """Small SQLite repository with bounded reads and safe connection lifecycle."""
+
+    @contextmanager
+    def _connection(self):
+        conn = sqlite3.connect(self.db_path, timeout=15)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout = 15000")
+        conn.execute("PRAGMA journal_mode = WAL")
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
     def __init__(self, db_path='ayam_counter.db'):
         self.db_path = db_path
         self.init_db()
@@ -41,6 +59,9 @@ class Database:
             )
         ''')
 
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_sessions_start_time ON sessions(start_time DESC)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_sessions_tanggal ON sessions(tanggal)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_detections_session_id ON detections(session_id)')
         conn.commit()
         conn.close()
 
@@ -80,18 +101,27 @@ class Database:
             'total_count': result[1] if result[1] else 0
         }
 
-    def get_history(self, limit=100):
-        """Get recent history (lengkap dengan keterangan & file_name)."""
+    def get_history(self, limit=100, offset=0, search=None):
+        """Get bounded recent history with optional source filter."""
+        limit = min(500, max(1, int(limit)))
+        offset = max(0, int(offset))
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        cursor.execute('''
+        where = ""
+        params = []
+        if search:
+            where = "WHERE asal_ayam LIKE ? OR keterangan LIKE ?"
+            pattern = f"%{str(search)[:100]}%"
+            params.extend([pattern, pattern])
+        cursor.execute(f'''
             SELECT id, asal_ayam, tanggal, jam, total_count, start_time, end_time,
                    keterangan, file_name
             FROM sessions
+            {where}
             ORDER BY start_time DESC
-            LIMIT ?
-        ''', (limit,))
+            LIMIT ? OFFSET ?
+        ''', (*params, limit, offset))
 
         results = cursor.fetchall()
         conn.close()

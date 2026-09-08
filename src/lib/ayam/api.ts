@@ -150,7 +150,32 @@ export interface HistoryItem {
 export interface HistoryResponse {
   history: HistoryItem[];
   stats: { total_sessions: number; total_count: number };
+  total?: number;
+  limit?: number;
+  offset?: number;
   error?: string;
+}
+
+export interface ApiErrorPayload {
+  error?: string;
+  message?: string;
+  fields?: Record<string, string>;
+  request_id?: string;
+}
+
+export class ApiRequestError extends Error {
+  status: number;
+  code?: string;
+  fields?: Record<string, string>;
+  requestId?: string;
+  constructor(status: number, payload: ApiErrorPayload | null, url: string) {
+    super(payload?.message ?? `HTTP ${status} on ${url}`);
+    this.name = "ApiRequestError";
+    this.status = status;
+    this.code = payload?.error;
+    this.fields = payload?.fields;
+    this.requestId = payload?.request_id;
+  }
 }
 
 export interface SessionDetail extends HistoryItem {
@@ -279,7 +304,7 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
         throw new PinRequiredError();
       }
     }
-    throw new Error(`HTTP ${res.status} on ${url}`);
+    throw new ApiRequestError(res.status, await safeJson(res), url);
   }
   return res.json() as Promise<T>;
 }
@@ -400,7 +425,14 @@ export const ayamApi = {
 
   getDevice: () => jsonFetch<DeviceInfo>(bp("/api/device")),
 
-  getHistory: () => jsonFetch<HistoryResponse>(bp("/api/history")),
+  getHistory: (options: { limit?: number; offset?: number; search?: string } = {}) => {
+    const q = new URLSearchParams({
+      limit: String(Math.min(500, Math.max(1, options.limit ?? 100))),
+      offset: String(Math.max(0, options.offset ?? 0)),
+    });
+    if (options.search?.trim()) q.set("search", options.search.trim().slice(0, 100));
+    return jsonFetch<HistoryResponse>(bp(`/api/history?${q.toString()}`));
+  },
 
   getExports: () => jsonFetch<ExportFile[]>(bp("/api/exports")),
 

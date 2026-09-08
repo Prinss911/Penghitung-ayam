@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Liveness/readiness endpoints: `/health/live` and `/health/ready`.
+- Request correlation IDs and baseline security response headers.
+- Configurable CORS, timeout, pagination, PIN lock, and reconnect settings.
+
+### Changed
+- SQLite now enables WAL/busy timeout and creates indexes for session/date lookups.
+- History reads accept bounded `limit`, `offset`, and search filtering.
+- Frontend API errors now preserve backend error codes, fields, and request IDs.
+- Dashboard polling avoids overlapping requests and pauses while the tab is hidden or offline.
+
+### Performance
+- Dropped duplicate polling work and bounded history query sizes.
+- Added latest-frame-oriented operational configuration for camera recovery.
+
+### Tests
+- Verification must include Python compilation, pytest, TypeScript, lint, production build, and browser smoke checks.
+
+### Docs
+- Updated environment templates and operational guidance for health/readiness and safe production settings.
+
 ---
 
 ## [2.0.0] - 2026-08-23

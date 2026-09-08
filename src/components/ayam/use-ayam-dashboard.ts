@@ -48,6 +48,21 @@ export function useAyamDashboard() {
   const mounted = useRef(true);
   const offlineStrikes = useRef(0);
   const healingRef = useRef(false);
+  const requestInFlight = useRef(new Set<string>());
+
+  const shouldPoll = useCallback(() =>
+    mounted.current && typeof document !== "undefined" && !document.hidden && navigator.onLine,
+  []);
+
+  const runOnce = useCallback(async (key: string, task: () => Promise<void>) => {
+    if (!shouldPoll() || requestInFlight.current.has(key)) return;
+    requestInFlight.current.add(key);
+    try {
+      await task();
+    } finally {
+      requestInFlight.current.delete(key);
+    }
+  }, [shouldPoll]);
 
   // =====================================================
   // REST polling: sinkronisasi stats + data lainnya
@@ -176,9 +191,9 @@ export function useAyamDashboard() {
   // Interval: polling stats + side data
   // =====================================================
   useEffect(() => {
-    const t1 = setInterval(pollStats, 2000);
-    const t2 = setInterval(refreshSideData, 6000);
-    const t3 = setInterval(pollTimeline, 2000);
+    const t1 = setInterval(() => runOnce("stats", pollStats), 2000);
+    const t2 = setInterval(() => runOnce("side-data", refreshSideData), 6000);
+    const t3 = setInterval(() => runOnce("timeline", pollTimeline), 2000);
     // Panggilan awal dijadwalkan agar tidak setState sinkron dalam effect
     const initial = setTimeout(() => {
       pollStats();
@@ -191,7 +206,7 @@ export function useAyamDashboard() {
       clearInterval(t2);
       clearInterval(t3);
     };
-  }, [pollStats, refreshSideData, pollTimeline]);
+  }, [pollStats, refreshSideData, pollTimeline, runOnce]);
 
   const refreshDevice = useCallback(async () => {
     try {

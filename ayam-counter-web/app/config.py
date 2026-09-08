@@ -5,6 +5,19 @@ load_dotenv()
 
 class Config:
     # ============================================
+    # OPERATIONAL SAFETY
+    # ============================================
+    ENVIRONMENT = os.getenv('FLASK_ENV', 'development').lower()
+    CORS_ORIGINS = [origin.strip() for origin in os.getenv('CORS_ORIGINS', '*').split(',') if origin.strip()]
+    REQUEST_TIMEOUT_SECONDS = float(os.getenv('REQUEST_TIMEOUT_SECONDS', 15))
+    HISTORY_MAX_LIMIT = int(os.getenv('HISTORY_MAX_LIMIT', 500))
+    EXPORT_MAX_RANGE_DAYS = int(os.getenv('EXPORT_MAX_RANGE_DAYS', 366))
+    PIN_MAX_ATTEMPTS = int(os.getenv('PIN_MAX_ATTEMPTS', 5))
+    PIN_LOCK_SECONDS = int(os.getenv('PIN_LOCK_SECONDS', 60))
+    RECONNECT_INITIAL_SECONDS = float(os.getenv('RECONNECT_INITIAL_SECONDS', 1))
+    RECONNECT_MAX_SECONDS = float(os.getenv('RECONNECT_MAX_SECONDS', 30))
+
+    # ============================================
     # CAMERA SETTINGS
     # ============================================
     CAMERA_SOURCE = os.getenv('CAMERA_SOURCE', 1)  # USB camera at index 1

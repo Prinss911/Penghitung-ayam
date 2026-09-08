@@ -30,9 +30,43 @@ app.config['SECRET_KEY'] = Config.SECRET_KEY
 
 socketio = SocketIO(
     app,
-    cors_allowed_origins="*",
+    cors_allowed_origins=Config.CORS_ORIGINS if Config.CORS_ORIGINS != ['*'] else '*',
     async_mode="threading"
 )
+
+lifecycle_lock = threading.RLock()
+shutdown_event = threading.Event()
+request_counter = 0
+
+@app.before_request
+def assign_request_id():
+    global request_counter
+    with lifecycle_lock:
+        request_counter += 1
+        request.environ['request_id'] = f"req-{request_counter:08d}"
+
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['X-Request-ID'] = request.environ.get('request_id', '')
+    return response
+
+@app.errorhandler(Exception)
+def handle_unexpected_error(error):
+    request_id = request.environ.get('request_id', 'unknown')
+    app.logger.exception("Unhandled request error request_id=%s", request_id)
+    return jsonify({"error": "internal_error", "message": "Terjadi kesalahan internal", "request_id": request_id}), 500
+
+@app.get('/health/live')
+def health_live():
+    return jsonify({"status": "ok", "live": True})
+
+@app.get('/health/ready')
+def health_ready():
+    ready = bool(detector and db and not shutdown_event.is_set())
+    return jsonify({"status": "ready" if ready else "not_ready", "ready": ready}), (200 if ready else 503)
+
 
 # =====================================================
 # MODULE INITIALIZATION
