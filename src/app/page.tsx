@@ -8,7 +8,7 @@
  *        ringkasan 7 hari, milestone toast + beep, filter riwayat, CSV.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { motion } from "framer-motion";
 import {
   Bar,
@@ -116,6 +116,39 @@ const fadeUp = {
   initial: { opacity: 0, y: 14 },
   animate: { opacity: 1, y: 0 },
 };
+
+const navigationSections = [
+  { id: "overview", label: "Overview" },
+  { id: "session", label: "Sesi Penghitungan" },
+  { id: "history", label: "Riwayat & Laporan" },
+  { id: "system", label: "Administrasi" },
+] as const;
+
+function useActiveSection() {
+  return useSyncExternalStore(
+    (onChange) => {
+      const handleChange = () => onChange();
+      window.addEventListener("hashchange", handleChange);
+      window.addEventListener("scroll", handleChange, { passive: true });
+      return () => {
+        window.removeEventListener("hashchange", handleChange);
+        window.removeEventListener("scroll", handleChange);
+      };
+    },
+    () => {
+      const hash = window.location.hash.slice(1);
+      if (hash && navigationSections.some((section) => section.id === hash)) return hash;
+      const visible = navigationSections.find((section) => {
+        const element = document.getElementById(section.id);
+        if (!element) return false;
+        const rect = element.getBoundingClientRect();
+        return rect.top <= 180 && rect.bottom > 180;
+      });
+      return visible?.id ?? "overview";
+    },
+    () => "overview",
+  );
+}
 
 function LiveDot({ active }: { active: boolean }) {
   return (
@@ -348,6 +381,7 @@ export default function AyamCounterPage() {
 
 
   const t = dict[lang];
+  const activeSection = useActiveSection();
 
   const {
     stats,
@@ -994,10 +1028,23 @@ export default function AyamCounterPage() {
         <aside className="hidden w-56 shrink-0 border-r border-border px-4 py-6 lg:block">
           <nav aria-label="Navigasi utama" className="sticky top-24 space-y-1">
             <p className="mb-3 px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Workspace</p>
-            <a href="#overview" className="flex items-center gap-3 rounded-lg bg-primary/10 px-3 py-2.5 text-sm font-semibold text-primary">Overview</a>
-            <a href="#session" className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Sesi Penghitungan</a>
-            <a href="#history" className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Riwayat & Laporan</a>
-            <a href="#system" className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Administrasi</a>
+            {navigationSections.map((section) => {
+              const isActive = activeSection === section.id;
+              return (
+                <a
+                  key={section.id}
+                  href={`#${section.id}`}
+                  aria-current={isActive ? "location" : undefined}
+                  className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
+                    isActive
+                      ? "bg-primary/10 font-semibold text-primary"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  }`}
+                >
+                  {section.label}
+                </a>
+              );
+            })}
             <div className="mt-8 rounded-xl border border-border bg-card p-3 text-xs text-muted-foreground">
               <p className="font-semibold text-foreground">Mode operator</p>
               <p className="mt-1 leading-relaxed">Gunakan satu sesi aktif untuk menjaga data tetap akurat.</p>
@@ -1006,10 +1053,23 @@ export default function AyamCounterPage() {
         </aside>
         <main id="overview" className="relative mx-auto w-full max-w-7xl flex-1 scroll-mt-24 px-4 py-5 sm:px-6 sm:py-6">
           <nav aria-label="Navigasi cepat" className="mb-4 flex gap-2 overflow-x-auto pb-1 lg:hidden">
-            <a href="#overview" className="shrink-0 rounded-full bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Overview</a>
-            <a href="#session" className="shrink-0 rounded-full border border-border bg-card px-3 py-2 text-xs font-medium text-muted-foreground">Sesi</a>
-            <a href="#history" className="shrink-0 rounded-full border border-border bg-card px-3 py-2 text-xs font-medium text-muted-foreground">Riwayat</a>
-            <a href="#system" className="shrink-0 rounded-full border border-border bg-card px-3 py-2 text-xs font-medium text-muted-foreground">Administrasi</a>
+            {navigationSections.map((section) => {
+              const isActive = activeSection === section.id;
+              return (
+                <a
+                  key={section.id}
+                  href={`#${section.id}`}
+                  aria-current={isActive ? "location" : undefined}
+                  className={`shrink-0 rounded-full border px-3 py-2 text-xs font-medium transition-colors ${
+                    isActive
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-card text-muted-foreground"
+                  }`}
+                >
+                  {section.id === "session" ? "Sesi" : section.id === "history" ? "Riwayat" : section.id === "system" ? "Administrasi" : "Overview"}
+                </a>
+              );
+            })}
           </nav>
           {/* ---- Stat cards ---- */}
         <motion.section
